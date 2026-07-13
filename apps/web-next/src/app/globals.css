@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/*
+ * Sprinkler theme — ported from the v1 app (apps/web/src/styles.css).
+ * Calm teal accent, mobile-first, light + dark via prefers-color-scheme.
+ */
+
+:root {
+  color-scheme: light dark;
+  --background: #f2f6f7;
+  --foreground: #10272e;
+  --card: #ffffff;
+  --card-foreground: #10272e;
+  --popover: #ffffff;
+  --popover-foreground: #10272e;
+  --primary: #0e7490;
+  --primary-foreground: #ffffff;
+  --secondary: #e0f2f7;
+  --secondary-foreground: #0c5c73;
+  --muted: #e7eef0;
+  --muted-foreground: #5c7681;
+  --accent: #e0f2f7;
+  --accent-foreground: #0c5c73;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #dbe6ea;
+  --input: #dbe6ea;
+  --ring: #0e7490;
+  --radius: 0.75rem;
+  --warn-bg: #fef3e2;
+  --warn-border: #f5c98a;
+  --warn-text: #8a4b08;
+  --shadow-card: 0 1px 3px rgba(16, 39, 46, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c1519;
+    --foreground: #e6f0f3;
+    --card: #14232a;
+    --card-foreground: #e6f0f3;
+    --popover: #14232a;
+    --popover-foreground: #e6f0f3;
+    --primary: #2bb3d4;
+    --primary-foreground: #06181e;
+    --secondary: #103642;
+    --secondary-foreground: #7fdcef;
+    --muted: #1a2b33;
+    --muted-foreground: #8aa5af;
+    --accent: #103642;
+    --accent-foreground: #7fdcef;
+    --destructive: #e05252;
+    --destructive-foreground: #ffffff;
+    --border: #23363f;
+    --input: #23363f;
+    --ring: #2bb3d4;
+    --warn-bg: #3a2410;
+    --warn-border: #7c5220;
+    --warn-text: #f5c98a;
+    --shadow-card: none;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-border: var(--warn-border);
+  --color-warn-text: var(--warn-text);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-size-adjust: 100%;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .animate-spin {
+    animation-duration: 3s;
+  }
+}

@@ -1,0 +1,26 @@
+# Dev-only Postgres for apps/web-next (Better Auth + zones tables).
+# Host port default is 5435: the spec's 5433 is occupied on the primary dev
+# machine (unrelated "orbit-postgres" container), and 5432 by another stack.
+# Override without editing this file:
+#   SPRINKLER_DB_PORT=5433 docker compose -f docker-compose.dev.yml up -d
+# and set DATABASE_URL in apps/web-next/.env to match.
+services:
+  postgres:
+    image: postgres:16
+    container_name: sprinkler-dev-postgres
+    environment:
+      POSTGRES_USER: sprinkler
+      POSTGRES_PASSWORD: sprinkler
+      POSTGRES_DB: sprinkler
+    ports:
+      - "${SPRINKLER_DB_PORT:-5435}:5432"
+    volumes:
+      - sprinkler-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sprinkler -d sprinkler"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  sprinkler-pgdata:

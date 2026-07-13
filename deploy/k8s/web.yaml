@@ -1,0 +1,49 @@
+# rainbird-web: nginx serving the static PWA build.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rainbird-web
+  namespace: rainbird
+  labels:
+    app: rainbird-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rainbird-web
+  template:
+    metadata:
+      labels:
+        app: rainbird-web
+    spec:
+      containers:
+        - name: web
+          image: rainbird-web:latest # replace with your registry image
+          ports:
+            - containerPort: 80
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rainbird-web
+  namespace: rainbird
+spec:
+  selector:
+    app: rainbird-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,90 @@
+# rainbird-web-next: the Next.js app (M1) — auth, dashboard, zone/user admin.
+# Talks to Postgres (DATABASE_URL) and to the executor Service (EXECUTOR_URL)
+# strictly server-side; browsers only ever reach this app.
+#
+# Requires secret rainbird-web-next (see secret.example.yaml):
+#   DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, TRUSTED_ORIGINS,
+#   EXECUTOR_URL
+#
+# One-time setup per environment (from a checkout, pointed at the same DB):
+#   npm run db:migrate && ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run seed
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rainbird-web-next
+  namespace: rainbird
+  labels:
+    app: rainbird-web-next
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rainbird-web-next
+  template:
+    metadata:
+      labels:
+        app: rainbird-web-next
+    spec:
+      containers:
+        - name: web-next
+          image: rainbird-web-next:latest # replace with your registry image
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: DATABASE_URL
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: BETTER_AUTH_SECRET
+            - name: BETTER_AUTH_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: BETTER_AUTH_URL
+            - name: TRUSTED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: TRUSTED_ORIGINS
+            - name: EXECUTOR_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: EXECUTOR_URL
+          readinessProbe:
+            httpGet:
+              path: /sign-in
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /sign-in
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 384Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rainbird-web-next
+  namespace: rainbird
+spec:
+  selector:
+    app: rainbird-web-next
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,53 @@
+# arp-pinner: the LNK WiFi module NEVER answers broadcast ARP, so any node
+# that might route traffic to it needs a permanent neighbor entry. This
+# DaemonSet re-pins the entry on every node once a minute (it survives
+# neighbor-table flushes and reboots that way).
+#
+# Set IFACE to the node's LAN interface (Talos default shown below).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: arp-pinner
+  namespace: rainbird
+  labels:
+    app: arp-pinner
+spec:
+  selector:
+    matchLabels:
+      app: arp-pinner
+  template:
+    metadata:
+      labels:
+        app: arp-pinner
+    spec:
+      hostNetwork: true
+      tolerations:
+        - operator: Exists # run on every node, control-plane included
+      containers:
+        - name: arp-pinner
+          image: busybox:1.36
+          env:
+            - name: IFACE
+              value: eth0
+            - name: RAINBIRD_IP
+              value: "192.168.86.173"
+            - name: RAINBIRD_MAC
+              value: "4c:a1:61:01:05:15"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                ip neigh replace "$RAINBIRD_IP" lladdr "$RAINBIRD_MAC" dev "$IFACE" nud permanent
+                sleep 60
+              done
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 16Mi
