@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx scripts/seed.ts",
-    "stub-executor": "node scripts/stub-executor.mjs"
+    "stub-executor": "node scripts/stub-executor.mjs",
+    "db:bootstrap": "drizzle-kit migrate && tsx scripts/seed.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.23",

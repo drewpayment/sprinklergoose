@@ -13,6 +13,13 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# Bootstrap image (build with --target bootstrap): runs migrations + idempotent
+# seed against DATABASE_URL, then exits. Used by the k8s post-sync Job.
+FROM builder AS bootstrap
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+USER nextjs
+CMD ["npm", "run", "db:bootstrap"]
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
