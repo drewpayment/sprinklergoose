@@ -160,11 +160,36 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
     }
   };
 
+  // Rendered once, placed twice (below): below `lg` it sits under the map
+  // in the left column (unchanged mobile/tablet QA'd layout); at `lg` it
+  // moves to the top of the right sidebar so it's visible without
+  // scrolling. Purely controlled/presentational (no internal state), so two
+  // mounted instances is safe — only one is ever in the a11y tree at a time
+  // since the other is `display:none` via the responsive `hidden` classes.
+  const editPanel = admin && editMode && (
+    <ZoneEditPanel
+      zones={zones}
+      selectedZoneId={selectedZoneId}
+      onSelectZone={selectZone}
+      tool={tool}
+      onArmPin={armPin}
+      onArmPolygon={armPolygon}
+      draftPin={draftPin}
+      draftPolygon={draftPolygon}
+      onUndo={undoLastPoint}
+      onFinishPolygon={finishPolygon}
+      onCancelDraft={cancelDraft}
+      onSave={() => void save()}
+      onClear={() => void clearGeometry()}
+      saving={saving}
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-start">
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-col gap-4 md:flex-row md:items-start lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-stretch lg:gap-5 lg:h-[clamp(480px,calc(100dvh-248px),900px)]">
+      <div className="min-w-0 flex-1 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
         {admin && (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2 lg:flex-none">
             <Button
               variant={editMode ? "default" : "outline"}
               size="sm"
@@ -181,7 +206,7 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
           </div>
         )}
 
-        <div className="h-[62vh] min-h-[380px] overflow-hidden rounded-2xl border md:h-[68vh]">
+        <div className="h-[62vh] min-h-[380px] overflow-hidden rounded-2xl border md:h-[68vh] lg:h-auto lg:min-h-0 lg:flex-1">
           <LeafletMap
             zones={zones}
             admin={admin}
@@ -197,27 +222,13 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
           />
         </div>
 
-        {admin && editMode && (
-          <ZoneEditPanel
-            zones={zones}
-            selectedZoneId={selectedZoneId}
-            onSelectZone={selectZone}
-            tool={tool}
-            onArmPin={armPin}
-            onArmPolygon={armPolygon}
-            draftPin={draftPin}
-            draftPolygon={draftPolygon}
-            onUndo={undoLastPoint}
-            onFinishPolygon={finishPolygon}
-            onCancelDraft={cancelDraft}
-            onSave={() => void save()}
-            onClear={() => void clearGeometry()}
-            saving={saving}
-          />
-        )}
+        {editPanel && <div className="lg:hidden">{editPanel}</div>}
       </div>
 
-      <div className="w-full md:w-[380px] md:flex-none">
+      <div className="w-full md:w-[380px] md:flex-none lg:flex lg:h-full lg:min-h-0 lg:w-auto lg:flex-col lg:gap-4 lg:overflow-y-auto lg:pr-1">
+        {editPanel && (
+          <div className="hidden lg:block lg:flex-none">{editPanel}</div>
+        )}
         <ForecastPanel />
       </div>
     </div>

@@ -102,7 +102,7 @@ export function ForecastPanel() {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
+      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:p-3">
         <div className="flex items-center justify-center gap-3 py-10 text-muted-foreground">
           <span
             aria-hidden="true"
@@ -130,9 +130,9 @@ export function ForecastPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
-        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground">
+    <div className="flex flex-col gap-4 lg:gap-3">
+      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:p-3">
+        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground lg:mb-1.5">
           Current conditions
         </h3>
         {forecast.weather ? (
@@ -158,15 +158,15 @@ export function ForecastPanel() {
         )}
       </section>
 
-      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
-        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground">
+      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:p-3">
+        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground lg:mb-1.5">
           Next 48 hours
         </h3>
         <PrecipChart hourly={forecast.hourly} />
       </section>
 
-      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
-        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground">
+      <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:p-3">
+        <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground lg:mb-1.5">
           Upcoming runs
         </h3>
         {forecast.upcoming.length === 0 ? (

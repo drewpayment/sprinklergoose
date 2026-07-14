@@ -58,12 +58,15 @@ export function ZoneEditPanel({
   const canSave = selected !== null && hasDraft;
 
   return (
-    <section className="mt-3 rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
+    <section className="mt-3 rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:mt-0 lg:p-3">
       <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground">
         Place zones
       </h3>
 
-      <div className="flex flex-col gap-1.5">
+      {/* Long zone lists scroll internally on desktop, where this panel is
+          pinned to the top of a viewport-height-constrained sidebar; below
+          `lg` (unchanged stacked layout) it just grows with the page. */}
+      <div className="flex flex-col gap-1.5 lg:max-h-[260px] lg:overflow-y-auto lg:pr-1">
         {zones.map((zone) => (
           <button
             key={zone.id}

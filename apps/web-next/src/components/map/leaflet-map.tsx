@@ -6,7 +6,7 @@
 
 import "leaflet/dist/leaflet.css";
 import type { Map as LeafletMapInstance } from "leaflet";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -203,10 +203,31 @@ export function LeafletMap({
   // DB. mapRef lets the sibling WayfindingControls tree (outside
   // react-leaflet's context) imperatively pan/zoom the map.
   const mapRef = useRef<LeafletMapInstance | null>(null);
+  // Mirrors mapRef into state so the resize-observer effect below can pick
+  // up the instance once react-leaflet actually creates it (refs alone
+  // don't retrigger effects).
+  const [mapInstance, setMapInstance] = useState<LeafletMapInstance | null>(
+    null,
+  );
   const [searchMarker, setSearchMarker] = useState<GeocodeResult | null>(
     null,
   );
   const [locateFix, setLocateFix] = useState<LocateFix | null>(null);
+
+  // The desktop layout resizes the map's container via CSS (viewport-height
+  // clamp, grid columns) rather than the window itself, and Leaflet only
+  // auto-recalculates on `window` resize — so watch the container directly
+  // and tell Leaflet to recompute (docs/M4-MAP-SPEC.md: map.invalidateSize()
+  // any time the container's own size changes, not just the window's).
+  useEffect(() => {
+    if (!mapInstance) return;
+    const container = mapInstance.getContainer();
+    const ro = new ResizeObserver(() => {
+      mapInstance.invalidateSize();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [mapInstance]);
 
   const view = useMemo(
     () => computeInitialView(zones, fallbackCenter),
@@ -229,7 +250,10 @@ export function LeafletMap({
   return (
     <div className="relative h-full w-full">
       <MapContainer
-        ref={mapRef}
+        ref={(m) => {
+          mapRef.current = m;
+          if (m) setMapInstance(m);
+        }}
         {...(view.kind === "bounds"
           ? { bounds: view.bounds }
           : { center: view.center, zoom: view.zoom })}

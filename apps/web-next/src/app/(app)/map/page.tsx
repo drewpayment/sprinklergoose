@@ -41,7 +41,13 @@ export default async function MapPage() {
       : null;
 
   return (
-    <main>
+    // Full-bleed breakout (desktop only): the shared (app)/layout.tsx shell
+    // caps content at max-w-4xl (~896px), which is far too narrow for a map
+    // + sidebar layout on a large screen. `relative left-1/2 -translate-x-1/2`
+    // recenters this element on the *viewport* (its containing block, since
+    // no ancestor is positioned) instead of the narrow shell, without
+    // touching the shared layout so every other page is unaffected.
+    <main className="lg:relative lg:left-1/2 lg:w-[min(96vw,1560px)] lg:-translate-x-1/2">
       <h2 className="mb-1 text-lg font-semibold">Map</h2>
       <p className="mb-4 text-sm text-muted-foreground">
         {admin
