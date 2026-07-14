@@ -7,8 +7,12 @@ import {
   type HistoryResponse,
   type ProgramInput,
   type ProgramView,
+  type QuickRunResponse,
+  type QuickRunStepInput,
   type RainDelayResponse,
   type RunNowResponse,
+  type WeatherSettingsInput,
+  type WeatherSettingsView,
 } from "./types";
 
 /** Browser client for the app's OWN route handlers (never the executor). */
@@ -78,6 +82,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/programs/${id}`, { method: "DELETE" }),
   runProgramNow: (id: number) =>
     request<RunNowResponse>(`/api/programs/${id}/run`, { method: "POST" }),
+  quickRun: (steps: QuickRunStepInput[]) =>
+    request<QuickRunResponse>("/api/quick-run", {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
   getHistory: (params: { page?: number; program?: number; status?: string }) => {
     const q = new URLSearchParams();
     if (params.page && params.page > 1) q.set("page", String(params.page));
@@ -86,4 +95,12 @@ export const api = {
     const qs = q.toString();
     return request<HistoryResponse>(`/api/history${qs ? `?${qs}` : ""}`);
   },
+  // M3 weather
+  getWeatherSettings: () =>
+    request<WeatherSettingsView>("/api/settings/weather"),
+  updateWeatherSettings: (input: WeatherSettingsInput) =>
+    request<WeatherSettingsView>("/api/settings/weather", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
 };

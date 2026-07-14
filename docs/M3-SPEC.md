@@ -109,3 +109,77 @@ do not touch ports 3000/8000, the real controller, or the shared dev DB
 (sprinkler-dev-postgres:5435). Spin up your OWN postgres container (port ≥5437,
 unique name, clean up) and stub executor on alternate ports. Live validation
 happens later at the PM-run integration gate.
+
+## M3.Q — Quick Run (manual multi-zone)
+
+PO request: "run all zones right now." One action that waters several zones
+back-to-back without creating a program. Ships in the M3 PR.
+
+### Design (binding)
+An ad-hoc run request rides the EXISTING run_request → scheduler → history
+pipeline. No new execution engine, no UI-driven sequencing.
+
+Schema change (web-next owns the drizzle migration):
+```sql
+ALTER TABLE run_requests ALTER COLUMN program_id DROP NOT NULL;
+ALTER TABLE run_requests ADD COLUMN steps jsonb;  -- [{"zone_id":1,"minutes":10}, ...]
+ALTER TABLE run_requests ADD CONSTRAINT run_requests_target CHECK (
+  (program_id IS NOT NULL AND steps IS NULL) OR
+  (program_id IS NULL AND steps IS NOT NULL));
+```
+
+Executor: claim_run_requests also reads `steps`. A steps-bearing request is
+admitted like run-now (jumps the queue ahead of scheduled items, FIFO among
+manual items, same overflow-→-missed rule) as a SYNTHETIC run: program_id NULL,
+program_name `Quick run`, initiator = requested_by. Execution goes through the
+same `_execute` path (N1 lock/pacing untouched): strictly sequential in payload
+order, disabled/unknown zone → `skipped_disabled` and continue, stop-all
+cancels run + queue, manual single-zone start cancels it (manual always wins).
+Because it is manual intent it BYPASSES rain delay and weather (PM ruling #1
+extends to quick runs). History: program_runs row (program_id NULL, name
+`Quick run`) + program_run_steps per step — existing history UI renders it.
+Malformed payload (empty array, bad zone_id/minutes types, minutes outside
+1–240, >20 steps) → log warning, record nothing, never crash the tick.
+
+Web: `POST /api/quick-run` (member+, same auth pattern as program run-now):
+body `{steps:[{zone_id,minutes},...]}`; server validates: 1–20 steps, zone_id
+must be an ENABLED zone, minutes int 1–240, no duplicate zone_ids; inserts the
+run_requests row + NOTIFY sprinkler_events.
+
+UI (dashboard/zones page, member+): a **Quick run** button opening a dialog:
+enabled zones as checkboxes (ascending zone order = run order), **Select all**,
+ONE shared "minutes per zone" input (default 10, 1–240) applied to every
+selected zone (payload stays per-step so per-zone durations can come later).
+Submit → confirmation toast; the existing program-run banner shows progress
+("Quick run", current zone, countdown) once status reports it.
+
+### Acceptance criteria — executor (M3.Q-E)
+- [ ] Q.E1 Steps-bearing request executes zones sequentially in payload order
+      via the N1-locked service; program_runs/program_run_steps rows exact
+      (program_id NULL, name Quick run, initiator email).
+- [ ] Q.E2 Jumps queue ahead of scheduled items, FIFO among manual items;
+      bypasses rain delay AND weather even when both would skip.
+- [ ] Q.E3 Zone disabled between request and execution → skipped_disabled,
+      remaining steps run, run `completed` (skip alone ≠ partial, per M2.E6).
+- [ ] Q.E4 Stop-all cancels a quick run (status cancelled, queue cleared);
+      manual zone start cancels it first (manual always wins).
+- [ ] Q.E5 Claimed ≤5s with NOTIFY / ≤15s poll; malformed payloads (each case
+      above) ignored with a warning, tick never crashes, request stays claimed.
+- [ ] Q.E6 status.program_run reflects the quick run (name, step position,
+      countdown, total_steps); program-based run_requests behave EXACTLY as
+      before (regression: full existing suite green).
+
+### Acceptance criteria — web (M3.Q-S)
+- [ ] Q.S1 Dialog flow: select zones (+Select all), shared minutes, submit →
+      run_requests row with correct steps payload + NOTIFY (verify in DB);
+      banner appears when status reports the run (stub start_program_run).
+- [ ] Q.S2 Validation: zero zones / minutes 0 or 241 / non-integer rejected
+      client-side with clear messages; server 400s on disabled zone, dup
+      zone_ids, >20 steps; disabled zones never offered in the dialog.
+- [ ] Q.S3 Member can quick-run (member+ like zone start); unauthenticated 401.
+- [ ] Q.S4 History lists quick runs: name Quick run, initiator email, expandable
+      per-step outcomes.
+- [ ] Q.S5 Mobile 390×844 + desktop, light + dark, build + lint clean.
+
+Hardware & environment rules: identical to the section above — isolated
+worktree, own postgres (≥5437), stub executor, NEVER the real controller.

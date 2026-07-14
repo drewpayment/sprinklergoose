@@ -9,17 +9,34 @@ zone_config.AsyncpgZoneConfigSource: lazy creation, small, bounded timeouts.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from .scheduler import Program, ProgramStep, RunRequest, ZoneRow
+from .weather import WeatherSettings
 
 logger = logging.getLogger(__name__)
 
 DB_TIMEOUT_SECONDS = 5.0
 NOTIFY_CHANNEL = "sprinkler_events"
+
+
+def _decode_jsonb(raw: Any) -> Any:
+    """asyncpg hands back jsonb columns as raw JSON text (no codec is
+    registered). None passes through; unparseable text decodes to None so
+    a malformed run_requests.steps value is treated as malformed rather
+    than raising out of the read path."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return raw  # already decoded (e.g. a codec is registered later)
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 class AsyncpgSchedulerStore:
@@ -112,12 +129,36 @@ class AsyncpgSchedulerStore:
             for row in rows
         }
 
+    async def fetch_weather_settings(self) -> WeatherSettings | None:
+        """M3: the singleton weather_settings row (web-next owns the DDL).
+        Returns None when the row is absent; raises on connection trouble —
+        the scheduler keeps its previous settings in that case."""
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
+            "SELECT enabled, latitude, longitude, rain_lookback_mm,"
+            " forecast_probability, forecast_lookahead_mm, freeze_temp_c,"
+            " updated_at"
+            " FROM weather_settings WHERE id = 1"
+        )
+        if row is None:
+            return None
+        return WeatherSettings(
+            enabled=row["enabled"],
+            latitude=row["latitude"],
+            longitude=row["longitude"],
+            rain_lookback_mm=row["rain_lookback_mm"],
+            forecast_probability=row["forecast_probability"],
+            forecast_lookahead_mm=row["forecast_lookahead_mm"],
+            freeze_temp_c=row["freeze_temp_c"],
+            updated_at=row["updated_at"].astimezone(UTC),
+        )
+
     # --------------------------------------------------------------- claims
 
     async def claim_run_requests(self) -> list[RunRequest]:
         pool = await self._get_pool()
         rows = await pool.fetch(
-            "SELECT id, program_id, requested_by FROM run_requests"
+            "SELECT id, program_id, requested_by, steps FROM run_requests"
             " WHERE claimed_at IS NULL ORDER BY created_at, id"
         )
         if not rows:
@@ -131,6 +172,12 @@ class AsyncpgSchedulerStore:
                 id=row["id"],
                 program_id=row["program_id"],
                 requested_by=row["requested_by"],
+                # M3.Q: asyncpg returns jsonb as raw text by default; decode
+                # it here so the scheduler always deals in Python values.
+                # A malformed/non-JSON value decodes to None, which
+                # parse_quick_run_steps() rejects like any other malformed
+                # payload rather than raising.
+                steps=_decode_jsonb(row["steps"]),
             )
             for row in rows
         ]
@@ -140,7 +187,7 @@ class AsyncpgSchedulerStore:
     async def insert_terminal_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,
@@ -166,7 +213,7 @@ class AsyncpgSchedulerStore:
     async def insert_running_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,

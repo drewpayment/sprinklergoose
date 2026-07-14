@@ -11,6 +11,7 @@ uniquely named container that is always removed.
 """
 
 import asyncio
+import json
 import socket
 import subprocess
 import time as _time
@@ -60,10 +61,15 @@ CREATE TABLE program_steps (
 );
 CREATE TABLE run_requests (
   id           serial PRIMARY KEY,
-  program_id   int NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+  program_id   int REFERENCES programs(id) ON DELETE CASCADE,
   requested_by text NOT NULL,
+  steps        jsonb,
   created_at   timestamptz NOT NULL DEFAULT now(),
-  claimed_at   timestamptz
+  claimed_at   timestamptz,
+  CONSTRAINT run_requests_target CHECK (
+    (program_id IS NOT NULL AND steps IS NULL) OR
+    (program_id IS NULL AND steps IS NOT NULL)
+  )
 );
 CREATE TABLE program_runs (
   id            serial PRIMARY KEY,
@@ -73,7 +79,7 @@ CREATE TABLE program_runs (
   initiator     text NOT NULL,
   status        text NOT NULL CHECK (status IN
                 ('running','completed','partial','failed','cancelled',
-                 'skipped_rain_delay','missed')),
+                 'skipped_rain_delay','skipped_weather','missed')),
   started_at    timestamptz,
   finished_at   timestamptz,
   note          text
@@ -90,6 +96,18 @@ CREATE TABLE program_run_steps (
   outcome    text CHECK (outcome IN
              ('completed','cancelled','failed','skipped_disabled'))
 );
+CREATE TABLE weather_settings (
+  id                    int PRIMARY KEY CHECK (id = 1),
+  enabled               boolean NOT NULL DEFAULT false,
+  latitude              double precision,
+  longitude             double precision,
+  rain_lookback_mm      double precision NOT NULL DEFAULT 6.0,
+  forecast_probability  int NOT NULL DEFAULT 70,
+  forecast_lookahead_mm double precision NOT NULL DEFAULT 4.0,
+  freeze_temp_c         double precision NOT NULL DEFAULT 1.0,
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO weather_settings (id) VALUES (1);
 INSERT INTO zones (id, name, enabled) VALUES
   (1, 'Front Lawn', true), (2, 'Back Lawn', true), (3, 'Side Beds', true),
   (4, 'Garden', true), (5, 'Front Beds', true),
@@ -175,6 +193,12 @@ async def db(pg_dsn):
     await conn.execute(
         "TRUNCATE program_run_steps, program_runs, run_requests,"
         " program_steps, programs RESTART IDENTITY CASCADE"
+    )
+    await conn.execute(
+        "UPDATE weather_settings SET enabled = false, latitude = NULL,"
+        " longitude = NULL, rain_lookback_mm = 6.0, forecast_probability = 70,"
+        " forecast_lookahead_mm = 4.0, freeze_temp_c = 1.0, updated_at = now()"
+        " WHERE id = 1"
     )
     yield conn
     await conn.close()
@@ -408,4 +432,167 @@ async def test_orphaned_running_row_finalized_on_startup(rig):
     )
     assert step["outcome"] == "cancelled"
     assert step["finished_at"] is not None
+    assert rig.controller.call_count("irrigate_zone") == 0
+
+
+# ---------------------------------------------------------- M3: weather + PG
+
+
+async def test_fetch_weather_settings_roundtrip(rig):
+    """The store reads the web-owned singleton row into WeatherSettings."""
+    settings = await rig.store.fetch_weather_settings()
+    assert settings is not None
+    assert settings.enabled is False
+    assert settings.latitude is None and settings.longitude is None
+    assert settings.rain_lookback_mm == 6.0
+    assert settings.forecast_probability == 70
+    assert settings.forecast_lookahead_mm == 4.0
+    assert settings.freeze_temp_c == 1.0
+    assert settings.updated_at is not None
+
+    await rig.db.execute(
+        "UPDATE weather_settings SET enabled = true, latitude = 42.33,"
+        " longitude = -83.05, rain_lookback_mm = 8.5, updated_at = now()"
+        " WHERE id = 1"
+    )
+    settings = await rig.store.fetch_weather_settings()
+    assert settings.enabled is True
+    assert settings.latitude == 42.33
+    assert settings.longitude == -83.05
+    assert settings.rain_lookback_mm == 8.5
+
+
+async def test_scheduled_run_skipped_weather_lands_in_real_postgres(
+    pg_dsn, db, zone_names_file
+):
+    """End-to-end against real SQL: weather enabled + skip-worthy conditions
+    -> a skipped_weather row (exercising the extended status CHECK), zero
+    module commands, and the note showing the values used."""
+    from .scheduler_testkit import FakeWeatherSource
+
+    await db.execute(
+        "UPDATE weather_settings SET enabled = true, latitude = 42.33,"
+        " longitude = -83.05, rain_lookback_mm = 6.0, updated_at = now()"
+        " WHERE id = 1"
+    )
+    occurrence_local = (datetime.now(TZ) + timedelta(seconds=6)).replace(
+        microsecond=0
+    )
+    await insert_program(db, "Wet Morning", [occurrence_local.time()], [(1, 1)])
+
+    controller = FakeController(latency=0.005)
+    service = RainbirdService(
+        host="127.0.0.1",
+        password="test",
+        zone_names=ZoneNameStore(zone_names_file),
+        controller_factory=lambda: controller,
+    )
+    source = FakeWeatherSource(past24_mm=9.2)
+    scheduler = Scheduler(
+        store=AsyncpgSchedulerStore(pg_dsn),
+        service=service,
+        timezone="America/Detroit",
+        minute_seconds=0.3,
+        weather_source=source,
+    )
+    try:
+        await scheduler.start()
+        await wait_until(lambda: scheduler._ready, timeout=10)
+
+        async def skipped_row():
+            return await db.fetchrow(
+                "SELECT * FROM program_runs WHERE status = 'skipped_weather'"
+            )
+
+        deadline = _time.monotonic() + 30
+        row = None
+        while _time.monotonic() < deadline:
+            row = await skipped_row()
+            if row is not None:
+                break
+            await asyncio.sleep(0.2)
+        assert row is not None, "no skipped_weather row appeared"
+        assert row["note"] == "rain 9.2mm in last 24h (threshold 6.0)"
+        assert row["initiator"] == "schedule"
+        assert row["scheduled_for"] == occurrence_local.astimezone(UTC)
+        assert controller.call_count("irrigate_zone") == 0
+        assert source.fetches == 1
+    finally:
+        await scheduler.stop()
+        await service.close()
+
+
+# --------------------------------------------------------------------- M3.Q
+
+
+async def test_quick_run_notify_claims_and_starts_within_5s(rig):
+    """Q.E1/Q.E5 against real SQL: a steps-bearing run_requests row (nullable
+    program_id, jsonb steps) is claimed and watered within 5s of NOTIFY, and
+    the history rows land exactly (program_id NULL, name 'Quick run')."""
+    await start_and_wait_ready(rig)
+    await wait_until(lambda: rig.store.listening, timeout=10)
+
+    steps = [{"zone_id": 1, "minutes": 1}, {"zone_id": 3, "minutes": 1}]
+    await rig.db.execute(
+        "INSERT INTO run_requests (program_id, requested_by, steps)"
+        " VALUES (NULL, $1, $2::jsonb)",
+        "drew.payment@gmail.com",
+        json.dumps(steps),
+    )
+    started = _time.monotonic()
+    await rig.db.execute("NOTIFY sprinkler_events")
+    await wait_until(
+        lambda: rig.controller.call_count("irrigate_zone") > 0, timeout=6
+    )
+    elapsed = _time.monotonic() - started
+    assert elapsed <= 5.0, f"watering started {elapsed:.2f}s after NOTIFY"
+
+    claimed_at = await rig.db.fetchval("SELECT claimed_at FROM run_requests")
+    assert claimed_at is not None
+
+    async def run_row():
+        return await rig.db.fetchrow("SELECT * FROM program_runs")
+
+    row = await run_row()
+    assert row is not None
+    assert row["program_id"] is None
+    assert row["program_name"] == "Quick run"
+    assert row["scheduled_for"] is None
+    assert row["initiator"] == "drew.payment@gmail.com"
+
+    deadline = _time.monotonic() + 10
+    while _time.monotonic() < deadline:
+        row = await run_row()
+        if row["status"] == "completed":
+            break
+        await asyncio.sleep(0.1)
+    assert row["status"] == "completed"
+    assert rig.controller.call_count("stop_irrigation") >= 1
+
+    step_rows = await rig.db.fetch(
+        "SELECT * FROM program_run_steps WHERE run_id = $1 ORDER BY position",
+        row["id"],
+    )
+    assert [s["zone_id"] for s in step_rows] == [1, 3]
+    assert [s["outcome"] for s in step_rows] == ["completed", "completed"]
+
+
+async def test_quick_run_malformed_payload_ignored_no_crash_real_pg(rig):
+    """Q.E5 against real SQL: an empty-array payload is malformed; the tick
+    must not crash, no program_runs row is created, and the request stays
+    claimed (so it is not retried forever)."""
+    await start_and_wait_ready(rig)
+    await rig.db.execute(
+        "INSERT INTO run_requests (program_id, requested_by, steps)"
+        " VALUES (NULL, $1, $2::jsonb)",
+        "drew.payment@gmail.com",
+        json.dumps([]),
+    )
+    await rig.db.execute("NOTIFY sprinkler_events")
+    await asyncio.sleep(6)  # a few ticks' worth of real time
+
+    claimed_at = await rig.db.fetchval("SELECT claimed_at FROM run_requests")
+    assert claimed_at is not None
+    count = await rig.db.fetchval("SELECT count(*) FROM program_runs")
+    assert count == 0
     assert rig.controller.call_count("irrigate_zone") == 0

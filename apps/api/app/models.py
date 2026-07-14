@@ -36,6 +36,17 @@ class NextScheduledInfo(BaseModel):
     at: str  # ISO 8601, executor-local timezone
 
 
+class WeatherInfo(BaseModel):
+    """The executor's cached weather snapshot (M3). Values are exactly what
+    a skip decision would be based on — history must show its work."""
+
+    fetched_at: str  # ISO 8601, UTC
+    past24_mm: float
+    next6_mm: float
+    current_temp_c: float
+    enabled: bool
+
+
 class StatusResponse(BaseModel):
     controller: ControllerInfo
     zones: list[Zone]
@@ -46,6 +57,8 @@ class StatusResponse(BaseModel):
     # M2 additions — always null when no scheduler is configured (no DATABASE_URL).
     program_run: ProgramRunInfo | None = None
     next_scheduled: NextScheduledInfo | None = None
+    # M3 addition — null when weather is disabled or never fetched.
+    weather: WeatherInfo | None = None
 
 
 class StartZoneRequest(BaseModel):

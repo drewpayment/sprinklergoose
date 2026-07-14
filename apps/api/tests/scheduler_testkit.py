@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.scheduler import Program, ProgramStep, RunRequest, ZoneRow
+from app.weather import WeatherSettings, WeatherSnapshot
 
 TZ = ZoneInfo("America/Detroit")
 
@@ -113,6 +114,59 @@ class FakeIrrigation:
         return self.rain_delay
 
 
+class FakeWeatherSource:
+    """WeatherSource stand-in: preset conditions, scriptable failures, and a
+    fetch counter for the cache assertions (M3.E5)."""
+
+    def __init__(
+        self,
+        past24_mm: float = 0.0,
+        next6_mm: float = 0.0,
+        current_temp_c: float = 20.0,
+    ) -> None:
+        self.past24_mm = past24_mm
+        self.next6_mm = next6_mm
+        self.current_temp_c = current_temp_c
+        self.fetches = 0
+        # Number of upcoming fetches that should raise.
+        self.fail_fetches = 0
+
+    async def fetch(
+        self, latitude: float, longitude: float, now: datetime
+    ) -> WeatherSnapshot:
+        self.fetches += 1
+        if self.fail_fetches > 0:
+            self.fail_fetches -= 1
+            raise RuntimeError("weather api unreachable")
+        return WeatherSnapshot(
+            fetched_at=now,
+            past24_mm=self.past24_mm,
+            next6_mm=self.next6_mm,
+            current_temp_c=self.current_temp_c,
+        )
+
+
+def make_weather_settings(
+    enabled: bool = True,
+    latitude: float | None = 42.33,
+    longitude: float | None = -83.05,
+    rain_lookback_mm: float = 6.0,
+    forecast_lookahead_mm: float = 4.0,
+    freeze_temp_c: float = 1.0,
+    updated_at: datetime | None = None,
+) -> WeatherSettings:
+    return WeatherSettings(
+        enabled=enabled,
+        latitude=latitude,
+        longitude=longitude,
+        rain_lookback_mm=rain_lookback_mm,
+        forecast_probability=70,
+        forecast_lookahead_mm=forecast_lookahead_mm,
+        freeze_temp_c=freeze_temp_c,
+        updated_at=updated_at or datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+
 class FakeSchedulerStore:
     """In-memory SchedulerStore mirroring the M2 schema semantics."""
 
@@ -128,6 +182,8 @@ class FakeSchedulerStore:
         self._next_request_id = 1
         self.fail_writes = False
         self.fail_reads = False
+        # M3: singleton weather_settings row mirror (None = row absent).
+        self.weather_settings: WeatherSettings | None = None
 
     # ------------------------------------------------------------- helpers
 
@@ -139,6 +195,24 @@ class FakeSchedulerStore:
                 "id": request_id,
                 "program_id": program_id,
                 "requested_by": requested_by,
+                "steps": None,
+                "claimed_at": None,
+            }
+        )
+        return request_id
+
+    def add_quick_run_request(self, steps: object, requested_by: str) -> int:
+        """M3.Q: a steps-bearing run_request (program_id NULL). `steps` is
+        the raw payload as it would arrive from jsonb — pass a malformed
+        shape directly to exercise Q.E5."""
+        request_id = self._next_request_id
+        self._next_request_id += 1
+        self.run_requests.append(
+            {
+                "id": request_id,
+                "program_id": None,
+                "requested_by": requested_by,
+                "steps": steps,
                 "claimed_at": None,
             }
         )
@@ -218,6 +292,7 @@ class FakeSchedulerStore:
                         id=req["id"],
                         program_id=req["program_id"],
                         requested_by=req["requested_by"],
+                        steps=req.get("steps"),
                     )
                 )
         return claimed
@@ -326,6 +401,10 @@ class FakeSchedulerStore:
             run["note"] = "cancelled: executor restarted mid-run"
             count += 1
         return count
+
+    async def fetch_weather_settings(self) -> WeatherSettings | None:
+        self._check_read()
+        return self.weather_settings
 
     async def listen(self, on_event) -> None:
         await asyncio.Event().wait()  # never fires; unit tests poke directly

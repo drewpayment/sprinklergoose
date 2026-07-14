@@ -3,7 +3,9 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   integer,
+  jsonb,
   pgTable,
   serial,
   text,
@@ -94,20 +96,40 @@ export const programSteps = pgTable(
   ],
 );
 
-/** "Run now": web writes, executor claims. */
-export const runRequests = pgTable("run_requests", {
-  id: serial("id").primaryKey(),
-  programId: integer("program_id")
-    .notNull()
-    .references(() => programs.id, { onDelete: "cascade" }),
-  /** User email. */
-  requestedBy: text("requested_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  /** Set by the executor. */
-  claimedAt: timestamp("claimed_at", { withTimezone: true }),
-});
+/**
+ * "Run now": web writes, executor claims. Either program-based (programId
+ * set, steps null) or a Quick Run (programId null, steps set — M3.Q) —
+ * enforced by the DB CHECK constraint below.
+ */
+export const runRequests = pgTable(
+  "run_requests",
+  {
+    id: serial("id").primaryKey(),
+    programId: integer("program_id").references(() => programs.id, {
+      onDelete: "cascade",
+    }),
+    /** Quick Run only: [{"zone_id":1,"minutes":10}, ...], run order = array order. */
+    steps: jsonb("steps").$type<QuickRunStep[]>(),
+    /** User email. */
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Set by the executor. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "run_requests_target",
+      sql`(${t.programId} IS NOT NULL AND ${t.steps} IS NULL) OR (${t.programId} IS NULL AND ${t.steps} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export interface QuickRunStep {
+  zone_id: number;
+  minutes: number;
+}
 
 /** History: executor writes, web reads. */
 export const programRuns = pgTable(
@@ -131,7 +153,7 @@ export const programRuns = pgTable(
   (t) => [
     check(
       "program_runs_status_check",
-      sql`${t.status} IN ('running','completed','partial','failed','cancelled','skipped_rain_delay','missed')`,
+      sql`${t.status} IN ('running','completed','partial','failed','cancelled','skipped_rain_delay','skipped_weather','missed')`,
     ),
   ],
 );
@@ -159,6 +181,39 @@ export const programRunSteps = pgTable(
     ),
   ],
 );
+
+/**
+ * M3 shared contract (docs/M3-SPEC.md): weather autonomy settings.
+ * SINGLETON — exactly one row, id always 1 (seeded disabled with null
+ * coordinates). web-next owns the row and its migration; the executor reads
+ * it to decide weather skips. NOTIFY sprinkler_events fires on every write.
+ */
+export const weatherSettings = pgTable(
+  "weather_settings",
+  {
+    id: integer("id").primaryKey(),
+    enabled: boolean("enabled").notNull().default(false),
+    /** Required when enabled (validated in the route, not the DB). */
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    /** Skip if >= this many mm fell in the past 24h. */
+    rainLookbackMm: doublePrecision("rain_lookback_mm").notNull().default(6.0),
+    /** Reserved for M3.1 (probability-based forecasts); not exposed in M3. */
+    forecastProbability: integer("forecast_probability").notNull().default(70),
+    /** Skip if >= this many mm are forecast for the next 6h. */
+    forecastLookaheadMm: doublePrecision("forecast_lookahead_mm")
+      .notNull()
+      .default(4.0),
+    /** Skip if the current temperature is <= this many °C. */
+    freezeTempC: doublePrecision("freeze_temp_c").notNull().default(1.0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [check("weather_settings_id_check", sql`${t.id} = 1`)],
+);
+
+export type WeatherSettingsRow = typeof weatherSettings.$inferSelect;
 
 export type Program = typeof programs.$inferSelect;
 export type ProgramStep = typeof programSteps.$inferSelect;

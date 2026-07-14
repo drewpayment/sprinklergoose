@@ -16,6 +16,11 @@
  *                                   step_remaining_seconds decrements in real
  *                                   time; the active step's zone shows active.
  *   {"program_run": null}           cancel the simulated run
+ *   {"weather": {"past24_mm": 9.2, "next6_mm": 0.3, "current_temp_c": 18.5}}
+ *                                   M3: set the status.weather snapshot
+ *                                   (fetched_at defaults to now, enabled to
+ *                                   true; pass any field to override).
+ *   {"weather": null}               M3: weather disabled / never fetched
  */
 import http from "node:http";
 
@@ -36,6 +41,8 @@ const state = {
   programRun: null,
   // M2: {program_name, at} (ISO) | null.
   nextScheduled: null,
+  // M3: {fetched_at, past24_mm, next6_mm, current_temp_c, enabled} | null.
+  weather: null,
 };
 
 const now = () => Date.now();
@@ -118,6 +125,19 @@ const server = http.createServer(async (req, res) => {
     if ("next_scheduled" in (body ?? {})) {
       state.nextScheduled = body.next_scheduled ?? null;
     }
+    if ("weather" in (body ?? {})) {
+      // M3: null clears; an object sets the snapshot with sane defaults.
+      state.weather =
+        body.weather === null
+          ? null
+          : {
+              fetched_at: body.weather.fetched_at ?? new Date().toISOString(),
+              past24_mm: body.weather.past24_mm ?? 0,
+              next6_mm: body.weather.next6_mm ?? 0,
+              current_temp_c: body.weather.current_temp_c ?? 20,
+              enabled: body.weather.enabled ?? true,
+            };
+    }
     if ("program_run" in (body ?? {}) && body.program_run === null) {
       state.programRun = null;
     }
@@ -166,6 +186,7 @@ const server = http.createServer(async (req, res) => {
       cached_at: state.cachedAt,
       program_run: programRunStatus(),
       next_scheduled: state.nextScheduled,
+      weather: state.weather,
     });
   }
 

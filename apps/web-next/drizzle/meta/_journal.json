@@ -15,6 +15,20 @@
       "when": 1783906747849,
       "tag": "0001_pale_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783921059721,
+      "tag": "0002_broken_orphan",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783989334965,
+      "tag": "0003_lean_ozymandias",
+      "breakpoints": true
     }
   ]
 }

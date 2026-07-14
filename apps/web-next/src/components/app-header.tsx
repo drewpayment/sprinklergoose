@@ -14,6 +14,7 @@ const links = (admin: boolean) => [
   ...(admin
     ? [
         { href: "/admin/zones", label: "Zones" },
+        { href: "/admin/weather", label: "Weather" },
         { href: "/admin/users", label: "Users" },
       ]
     : []),

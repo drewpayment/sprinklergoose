@@ -31,6 +31,11 @@ const RUN_STYLES: Record<RunStatus, { label: string; className: string }> = {
     label: "Rain delay",
     className: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
   },
+  skipped_weather: {
+    label: "Weather skip",
+    className:
+      "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+  },
   missed: {
     label: "Missed",
     className: "bg-warn-bg text-warn-text border-warn-border",

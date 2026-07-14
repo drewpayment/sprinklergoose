@@ -31,6 +31,15 @@ export interface ExecutorNextScheduled {
   at: string;
 }
 
+/** Executor's cached weather snapshot (docs/M3-SPEC.md GET /api/status). */
+export interface ExecutorWeather {
+  fetched_at: string;
+  past24_mm: number;
+  next6_mm: number;
+  current_temp_c: number;
+  enabled: boolean;
+}
+
 export interface ExecutorStatus {
   controller: ControllerInfo;
   zones: ExecutorZone[];
@@ -40,6 +49,7 @@ export interface ExecutorStatus {
   cached_at: string | null;
   program_run: ExecutorProgramRun | null;
   next_scheduled: ExecutorNextScheduled | null;
+  weather: ExecutorWeather | null;
 }
 
 /** Executor live state merged with app-owned zone config (name, enabled). */
@@ -60,6 +70,7 @@ export interface DashboardStatus {
   cached_at: string | null;
   program_run: ExecutorProgramRun | null;
   next_scheduled: ExecutorNextScheduled | null;
+  weather: ExecutorWeather | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +125,7 @@ export const RUN_STATUSES = [
   "failed",
   "cancelled",
   "skipped_rain_delay",
+  "skipped_weather",
   "missed",
 ] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
@@ -145,6 +157,11 @@ export interface HistoryRun {
   started_at: string | null;
   finished_at: string | null;
   note: string | null;
+  /**
+   * Whether the program still exists AND is enabled right now (M3: gates the
+   * "Water anyway" button on skipped rows). Null when the program was deleted.
+   */
+  program_enabled: boolean | null;
   steps: HistoryRunStep[];
 }
 
@@ -157,6 +174,45 @@ export interface HistoryResponse {
 
 export interface RunNowResponse {
   request_id: number;
+}
+
+// ---------------------------------------------------------------------------
+// M3.Q Quick Run (docs/M3-SPEC.md) — ad-hoc multi-zone run, no program.
+
+export interface QuickRunStepInput {
+  zone_id: number;
+  minutes: number;
+}
+
+/** POST /api/quick-run payload; array order = run order. */
+export interface QuickRunInput {
+  steps: QuickRunStepInput[];
+}
+
+export type QuickRunResponse = RunNowResponse;
+
+// ---------------------------------------------------------------------------
+// M3 weather (docs/M3-SPEC.md)
+
+/** The app's view of the weather_settings singleton (GET/PUT payload). */
+export interface WeatherSettingsView {
+  enabled: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  rain_lookback_mm: number;
+  forecast_lookahead_mm: number;
+  freeze_temp_c: number;
+  updated_at: string;
+}
+
+/** PUT payload — forecast_probability is reserved for M3.1, not exposed. */
+export interface WeatherSettingsInput {
+  enabled: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  rain_lookback_mm: number;
+  forecast_lookahead_mm: number;
+  freeze_temp_c: number;
 }
 
 export interface ActiveZonesResponse {

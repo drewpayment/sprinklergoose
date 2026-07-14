@@ -8,7 +8,7 @@
  */
 import "dotenv/config";
 import { db } from "../src/db";
-import { zones } from "../src/db/schema";
+import { weatherSettings, zones } from "../src/db/schema";
 import { auth } from "../src/lib/auth";
 
 async function seedAdmin() {
@@ -61,9 +61,25 @@ async function seedZones() {
   );
 }
 
+async function seedWeatherSettings() {
+  // M3 singleton (id=1): weather is OFF until an admin configures a location.
+  // The migration also inserts this row; both are idempotent.
+  const inserted = await db
+    .insert(weatherSettings)
+    .values({ id: 1 })
+    .onConflictDoNothing()
+    .returning({ id: weatherSettings.id });
+  console.log(
+    inserted.length > 0
+      ? "seeded weather_settings singleton (disabled)"
+      : "weather_settings already seeded — skipping",
+  );
+}
+
 async function main() {
   await seedAdmin();
   await seedZones();
+  await seedWeatherSettings();
   console.log("seed complete");
   process.exit(0);
 }

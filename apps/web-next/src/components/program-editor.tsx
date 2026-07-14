@@ -594,18 +594,21 @@ export function ProgramEditor({
         </Button>
       </section>
 
-      {/* Rain delay */}
+      {/* Rain delay + weather deference (one flag governs both, M3) */}
       <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-medium">Respect rain delay</p>
+            <p className="text-sm font-medium">
+              Skip when rain delay or weather says so
+            </p>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              Skip runs while a rain delay is active.
+              Scheduled runs are skipped while a rain delay is active or when
+              weather rules apply. Run now always waters.
             </p>
           </div>
           <Switch
             checked={respectRainDelay}
-            aria-label="Respect rain delay"
+            aria-label="Skip when rain delay or weather says so"
             onCheckedChange={setRespectRainDelay}
           />
         </div>
