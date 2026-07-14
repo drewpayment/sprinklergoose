@@ -177,6 +177,21 @@ export interface RunNowResponse {
 }
 
 // ---------------------------------------------------------------------------
+// M3.Q Quick Run (docs/M3-SPEC.md) — ad-hoc multi-zone run, no program.
+
+export interface QuickRunStepInput {
+  zone_id: number;
+  minutes: number;
+}
+
+/** POST /api/quick-run payload; array order = run order. */
+export interface QuickRunInput {
+  steps: QuickRunStepInput[];
+}
+
+export type QuickRunResponse = RunNowResponse;
+
+// ---------------------------------------------------------------------------
 // M3 weather (docs/M3-SPEC.md)
 
 /** The app's view of the weather_settings singleton (GET/PUT payload). */

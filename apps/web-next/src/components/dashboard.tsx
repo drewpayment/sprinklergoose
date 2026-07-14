@@ -7,6 +7,7 @@
 import { CalendarClock, CloudRain } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { QuickRunDialog } from "@/components/quick-run-dialog";
 import { RainDelayChip } from "@/components/rain-delay";
 import { ZoneCard } from "@/components/zone-card";
 import { api } from "@/lib/api-client";
@@ -238,6 +239,19 @@ export function Dashboard({ admin }: { admin: boolean }) {
                 {formatMm(status.weather.next6_mm)}
               </span>
             )}
+          </div>
+
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-[13.5px] font-semibold text-muted-foreground">
+              Zones
+            </h2>
+            <QuickRunDialog
+              zones={status.zones
+                .filter((z) => z.enabled)
+                .map((z) => ({ id: z.id, name: z.name }))}
+              disabled={busy || offline}
+              onSubmitted={refresh}
+            />
           </div>
 
           <main className="grid grid-cols-1 gap-3 md:grid-cols-2">

@@ -9,6 +9,7 @@ zone_config.AsyncpgZoneConfigSource: lazy creation, small, bounded timeouts.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -21,6 +22,21 @@ logger = logging.getLogger(__name__)
 
 DB_TIMEOUT_SECONDS = 5.0
 NOTIFY_CHANNEL = "sprinkler_events"
+
+
+def _decode_jsonb(raw: Any) -> Any:
+    """asyncpg hands back jsonb columns as raw JSON text (no codec is
+    registered). None passes through; unparseable text decodes to None so
+    a malformed run_requests.steps value is treated as malformed rather
+    than raising out of the read path."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return raw  # already decoded (e.g. a codec is registered later)
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 class AsyncpgSchedulerStore:
@@ -142,7 +158,7 @@ class AsyncpgSchedulerStore:
     async def claim_run_requests(self) -> list[RunRequest]:
         pool = await self._get_pool()
         rows = await pool.fetch(
-            "SELECT id, program_id, requested_by FROM run_requests"
+            "SELECT id, program_id, requested_by, steps FROM run_requests"
             " WHERE claimed_at IS NULL ORDER BY created_at, id"
         )
         if not rows:
@@ -156,6 +172,12 @@ class AsyncpgSchedulerStore:
                 id=row["id"],
                 program_id=row["program_id"],
                 requested_by=row["requested_by"],
+                # M3.Q: asyncpg returns jsonb as raw text by default; decode
+                # it here so the scheduler always deals in Python values.
+                # A malformed/non-JSON value decodes to None, which
+                # parse_quick_run_steps() rejects like any other malformed
+                # payload rather than raising.
+                steps=_decode_jsonb(row["steps"]),
             )
             for row in rows
         ]
@@ -165,7 +187,7 @@ class AsyncpgSchedulerStore:
     async def insert_terminal_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,
@@ -191,7 +213,7 @@ class AsyncpgSchedulerStore:
     async def insert_running_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,

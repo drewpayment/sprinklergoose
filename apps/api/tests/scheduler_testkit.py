@@ -195,6 +195,24 @@ class FakeSchedulerStore:
                 "id": request_id,
                 "program_id": program_id,
                 "requested_by": requested_by,
+                "steps": None,
+                "claimed_at": None,
+            }
+        )
+        return request_id
+
+    def add_quick_run_request(self, steps: object, requested_by: str) -> int:
+        """M3.Q: a steps-bearing run_request (program_id NULL). `steps` is
+        the raw payload as it would arrive from jsonb — pass a malformed
+        shape directly to exercise Q.E5."""
+        request_id = self._next_request_id
+        self._next_request_id += 1
+        self.run_requests.append(
+            {
+                "id": request_id,
+                "program_id": None,
+                "requested_by": requested_by,
+                "steps": steps,
                 "claimed_at": None,
             }
         )
@@ -274,6 +292,7 @@ class FakeSchedulerStore:
                         id=req["id"],
                         program_id=req["program_id"],
                         requested_by=req["requested_by"],
+                        steps=req.get("steps"),
                     )
                 )
         return claimed

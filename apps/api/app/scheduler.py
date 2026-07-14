@@ -59,6 +59,12 @@ INITIATOR_SCHEDULE = "schedule"
 DAY_TYPE_DAYS_OF_WEEK = "days_of_week"
 DAY_TYPE_INTERVAL = "interval"
 
+# M3.Q: Quick Run — an ad-hoc, program-less multi-zone run_request.
+QUICK_RUN_NAME = "Quick run"
+QUICK_RUN_MAX_STEPS = 20
+QUICK_RUN_MIN_MINUTES = 1
+QUICK_RUN_MAX_MINUTES = 240
+
 
 # --------------------------------------------------------------------- model
 
@@ -97,22 +103,34 @@ class ZoneRow:
 @dataclass(frozen=True)
 class RunRequest:
     id: int
-    program_id: int
+    program_id: int | None  # None for a Quick Run (M3.Q); steps set instead
     requested_by: str
+    # Raw run_requests.steps jsonb, decoded to a Python value but NOT yet
+    # validated — parse_quick_run_steps() does that at admission time so a
+    # malformed payload can be rejected with a warning instead of crashing.
+    steps: object | None = None
 
 
 @dataclass(frozen=True)
 class QueueItem:
-    program_id: int
+    program_id: int | None  # None for a synthetic Quick Run item
     program_name: str
     scheduled_for: datetime | None  # UTC occurrence instant; None = run-now
     initiator: str  # INITIATOR_SCHEDULE or the requesting user's email
+    # M3.Q: set only for a Quick Run. The item carries its own steps so the
+    # pump/execute path never has to resolve a program_id through
+    # self._programs (there is no backing program row for a quick run).
+    steps: tuple[ProgramStep, ...] | None = None
+
+    @property
+    def is_quick_run(self) -> bool:
+        return self.steps is not None
 
 
 @dataclass
 class ActiveRun:
     run_id: int
-    program_id: int
+    program_id: int | None
     program_name: str
     scheduled_for: datetime | None
     total_steps: int
@@ -159,7 +177,7 @@ class SchedulerStore(Protocol):
     async def insert_terminal_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,
@@ -170,7 +188,7 @@ class SchedulerStore(Protocol):
     async def insert_running_run(
         self,
         *,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         initiator: str,
@@ -257,6 +275,54 @@ def _summarize(outcomes: list[str], skipped_names: list[str]) -> tuple[str, str 
     if failed:
         return "partial", note
     return "completed", note
+
+
+def parse_quick_run_steps(raw: object) -> tuple[ProgramStep, ...] | None:
+    """Validate/parse a Quick Run payload (run_requests.steps jsonb) into
+    ProgramStep tuples in payload order. Returns None for any malformed
+    payload (M3.Q-E5): not a non-empty list, >20 entries, a non-dict entry,
+    non-integer/bool zone_id or minutes, or minutes outside 1-240. The
+    caller logs a warning and records nothing — a malformed payload must
+    never crash the tick."""
+    if not isinstance(raw, list) or not raw or len(raw) > QUICK_RUN_MAX_STEPS:
+        return None
+    steps: list[ProgramStep] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        zone_id = entry.get("zone_id")
+        minutes = entry.get("minutes")
+        # bool is a subclass of int in Python — reject it explicitly so
+        # {"zone_id": true, ...} doesn't silently parse as zone 1.
+        if not isinstance(zone_id, int) or isinstance(zone_id, bool):
+            return None
+        if not isinstance(minutes, int) or isinstance(minutes, bool):
+            return None
+        if not (QUICK_RUN_MIN_MINUTES <= minutes <= QUICK_RUN_MAX_MINUTES):
+            return None
+        steps.append(ProgramStep(position=len(steps), zone_id=zone_id, minutes=minutes))
+    return tuple(steps)
+
+
+def _quick_run_program(item: QueueItem) -> Program:
+    """Build the synthetic Program the execution path runs a Quick Run
+    through. respect_rain_delay is False and — belt-and-suspenders — the
+    rain-delay/weather gate in _execute only ever triggers for
+    initiator == INITIATOR_SCHEDULE, which a quick run's initiator (the
+    requesting user's email) never is (Q.E2 bypass)."""
+    assert item.steps is not None
+    return Program(
+        id=0,  # never written to the DB — insert_* calls pass program_id=None
+        name=item.program_name,
+        enabled=True,
+        start_times=(),
+        day_type=DAY_TYPE_DAYS_OF_WEEK,
+        days_of_week=(),
+        interval_days=None,
+        anchor_date=None,
+        respect_rain_delay=False,
+        steps=item.steps,
+    )
 
 
 # ----------------------------------------------------------------- scheduler
@@ -398,7 +464,10 @@ class Scheduler:
         keys = await self._store.recent_run_keys(window_start)
         self._fired = {k for k in (self._fired | keys) if k[1] >= window_start}
         for req in await self._store.claim_run_requests():
-            await self._admit_run_now(req)
+            if req.program_id is not None:
+                await self._admit_run_now(req)
+            else:
+                await self._admit_quick_run(req)
         if self.weather is not None:
             # Settings ride the same NOTIFY/15s-poll cycle as programs
             # (M3.E5/E6). A failed read keeps the previous settings — weather
@@ -518,9 +587,48 @@ class Scheduler:
             index, QueueItem(program.id, program.name, None, req.requested_by)
         )
 
+    async def _admit_quick_run(self, req: RunRequest) -> None:
+        """M3.Q: admit a steps-bearing run_request as a synthetic run —
+        program_id NULL, name 'Quick run', initiator = requested_by. Jumps
+        the queue exactly like a program run-now (same FIFO-among-manual-
+        items and overflow rules); a malformed payload is dropped with a
+        warning and never crashes the tick (Q.E5)."""
+        steps = parse_quick_run_steps(req.steps)
+        if steps is None:
+            logger.warning(
+                "run request %d has a malformed quick-run payload; ignored", req.id
+            )
+            return
+        if len(self._queue) >= self._queue_cap:
+            try:
+                await self._store.insert_terminal_run(
+                    program_id=None,
+                    program_name=QUICK_RUN_NAME,
+                    scheduled_for=None,
+                    initiator=req.requested_by,
+                    status="missed",
+                    note=f"missed: queue full (cap {self._queue_cap})",
+                    now=self._clock.now(),
+                )
+            except Exception:
+                logger.exception(
+                    "failed to record overflowed quick run request %d", req.id
+                )
+            return
+        # Jumps the queue like run-now, FIFO among manual (non-schedule) items.
+        index = 0
+        for item in self._queue:
+            if item.initiator == INITIATOR_SCHEDULE:
+                break
+            index += 1
+        self._queue.insert(
+            index,
+            QueueItem(None, QUICK_RUN_NAME, None, req.requested_by, steps=steps),
+        )
+
     async def _record_terminal(
         self,
-        program_id: int,
+        program_id: int | None,
         program_name: str,
         scheduled_for: datetime | None,
         status: str,
@@ -551,13 +659,19 @@ class Scheduler:
             self._manual_until = None
         while self._queue:
             item = self._queue.popleft()
-            program = self._programs.get(item.program_id)
-            if program is None or not program.steps:
-                continue  # deleted/emptied while queued — drop
-            if item.initiator == INITIATOR_SCHEDULE and not program.enabled:
-                continue  # disabled while queued — drop
+            if item.is_quick_run:
+                # Synthetic: no backing row in self._programs, so the item
+                # carries its own steps rather than being looked up by id.
+                program = _quick_run_program(item)
+            else:
+                program = self._programs.get(item.program_id)
+                if program is None or not program.steps:
+                    continue  # deleted/emptied while queued — drop
+                if item.initiator == INITIATOR_SCHEDULE and not program.enabled:
+                    continue  # disabled while queued — drop
             self._run_task = asyncio.create_task(
-                self._execute(program, item), name=f"program-run-{program.id}"
+                self._execute(program, item),
+                name=f"program-run-{program.id if not item.is_quick_run else 'quick'}",
             )
             return
 
@@ -618,8 +732,11 @@ class Scheduler:
                 )
                 for step in program.steps
             ]
+            # M3.Q: a Quick Run has no backing program row — persist NULL,
+            # never the synthetic Program's placeholder id.
+            db_program_id = None if item.is_quick_run else program.id
             run_id = await self._store.insert_running_run(
-                program_id=program.id,
+                program_id=db_program_id,
                 program_name=program.name,
                 scheduled_for=item.scheduled_for,
                 initiator=item.initiator,
@@ -630,7 +747,7 @@ class Scheduler:
                 self._fired.add((program.id, item.scheduled_for))
             self._active = ActiveRun(
                 run_id=run_id,
-                program_id=program.id,
+                program_id=db_program_id,
                 program_name=program.name,
                 scheduled_for=item.scheduled_for,
                 total_steps=len(program.steps),

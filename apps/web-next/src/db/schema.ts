@@ -5,6 +5,7 @@ import {
   date,
   doublePrecision,
   integer,
+  jsonb,
   pgTable,
   serial,
   text,
@@ -95,20 +96,40 @@ export const programSteps = pgTable(
   ],
 );
 
-/** "Run now": web writes, executor claims. */
-export const runRequests = pgTable("run_requests", {
-  id: serial("id").primaryKey(),
-  programId: integer("program_id")
-    .notNull()
-    .references(() => programs.id, { onDelete: "cascade" }),
-  /** User email. */
-  requestedBy: text("requested_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  /** Set by the executor. */
-  claimedAt: timestamp("claimed_at", { withTimezone: true }),
-});
+/**
+ * "Run now": web writes, executor claims. Either program-based (programId
+ * set, steps null) or a Quick Run (programId null, steps set — M3.Q) —
+ * enforced by the DB CHECK constraint below.
+ */
+export const runRequests = pgTable(
+  "run_requests",
+  {
+    id: serial("id").primaryKey(),
+    programId: integer("program_id").references(() => programs.id, {
+      onDelete: "cascade",
+    }),
+    /** Quick Run only: [{"zone_id":1,"minutes":10}, ...], run order = array order. */
+    steps: jsonb("steps").$type<QuickRunStep[]>(),
+    /** User email. */
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Set by the executor. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "run_requests_target",
+      sql`(${t.programId} IS NOT NULL AND ${t.steps} IS NULL) OR (${t.programId} IS NULL AND ${t.steps} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export interface QuickRunStep {
+  zone_id: number;
+  minutes: number;
+}
 
 /** History: executor writes, web reads. */
 export const programRuns = pgTable(

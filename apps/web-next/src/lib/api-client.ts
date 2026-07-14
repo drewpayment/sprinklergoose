@@ -7,6 +7,8 @@ import {
   type HistoryResponse,
   type ProgramInput,
   type ProgramView,
+  type QuickRunResponse,
+  type QuickRunStepInput,
   type RainDelayResponse,
   type RunNowResponse,
   type WeatherSettingsInput,
@@ -80,6 +82,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/programs/${id}`, { method: "DELETE" }),
   runProgramNow: (id: number) =>
     request<RunNowResponse>(`/api/programs/${id}/run`, { method: "POST" }),
+  quickRun: (steps: QuickRunStepInput[]) =>
+    request<QuickRunResponse>("/api/quick-run", {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
   getHistory: (params: { page?: number; program?: number; status?: string }) => {
     const q = new URLSearchParams();
     if (params.page && params.page > 1) q.set("page", String(params.page));
