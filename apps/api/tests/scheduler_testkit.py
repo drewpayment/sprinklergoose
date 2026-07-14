@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.scheduler import Program, ProgramStep, RunRequest, ZoneRow
-from app.weather import WeatherSettings, WeatherSnapshot
+from app.weather import HourlyBucket, WeatherSettings, WeatherSnapshot
 
 TZ = ZoneInfo("America/Detroit")
 
@@ -123,10 +123,14 @@ class FakeWeatherSource:
         past24_mm: float = 0.0,
         next6_mm: float = 0.0,
         current_temp_c: float = 20.0,
+        hourly: tuple[HourlyBucket, ...] = (),
     ) -> None:
         self.past24_mm = past24_mm
         self.next6_mm = next6_mm
         self.current_temp_c = current_temp_c
+        # M4: the retained hourly series a fetch returns. Empty by default —
+        # existing M3 tests never look at it, only at the three aggregates.
+        self.hourly = hourly
         self.fetches = 0
         # Number of upcoming fetches that should raise.
         self.fail_fetches = 0
@@ -143,6 +147,7 @@ class FakeWeatherSource:
             past24_mm=self.past24_mm,
             next6_mm=self.next6_mm,
             current_temp_c=self.current_temp_c,
+            hourly=self.hourly,
         )
 
 

@@ -47,13 +47,29 @@ class WeatherSettings:
 
 
 @dataclass(frozen=True)
+class HourlyBucket:
+    """One Open-Meteo hourly reading (M4: retained on the snapshot so
+    forecast predictions can compute window sums at arbitrary occurrence
+    times, not just 'now')."""
+
+    time: datetime  # aware UTC, the bucket's starting instant
+    precip_mm: float
+    temp_c: float | None
+
+
+@dataclass(frozen=True)
 class WeatherSnapshot:
-    """The values a skip decision is based on; they go verbatim into notes."""
+    """The values a skip decision is based on; they go verbatim into notes.
+
+    `hourly` (M4) is the full retained past+forecast series backing the
+    three aggregates above; it defaults to empty so existing callers that
+    construct a WeatherSnapshot without it (tests, fakes) are unaffected."""
 
     fetched_at: datetime  # aware UTC
     past24_mm: float
     next6_mm: float
     current_temp_c: float
+    hourly: tuple[HourlyBucket, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -107,7 +123,9 @@ class OpenMeteoWeatherSource:
             "longitude": f"{longitude}",
             "hourly": "precipitation,temperature_2m",
             "past_days": "2",
-            "forecast_days": "2",
+            "forecast_days": "3",  # M4: extended so 48h-ahead predictions
+            # always have next6(T)/past24(T) coverage for occurrences near
+            # the end of the forecast horizon.
             "timezone": "UTC",
         }
         timeout = aiohttp.ClientTimeout(total=FETCH_TIMEOUT_SECONDS)
@@ -151,11 +169,20 @@ def parse_open_meteo(data: dict, now: datetime) -> WeatherSnapshot:
             current_temp = temp  # newest reading at or before now wins
     if current_temp is None:
         raise ValueError("open-meteo payload has no current temperature")
+    # M4: retain the full past+forecast series (unused by the M3 aggregates
+    # above, computed separately here so the existing loop/logic is
+    # untouched) so forecast predictions can compute window sums at
+    # arbitrary future occurrence times.
+    hourly = tuple(
+        HourlyBucket(time=t, precip_mm=mm or 0.0, temp_c=temp)
+        for t, mm, temp in zip(times, precipitation, temperature, strict=True)
+    )
     return WeatherSnapshot(
         fetched_at=now,
         past24_mm=round(past24, 2),
         next6_mm=round(next6, 2),
         current_temp_c=current_temp,
+        hourly=hourly,
     )
 
 
@@ -262,3 +289,31 @@ def _decide(settings: WeatherSettings, snap: WeatherSnapshot) -> WeatherDecision
             f" (threshold {_fmt(settings.freeze_temp_c)})",
         )
     return WeatherDecision(skip=False, note=None)
+
+
+def classify_conditions(
+    settings: WeatherSettings, snap: WeatherSnapshot
+) -> tuple[str | None, str | None]:
+    """M4: same three rules, same order, same thresholds/operators and note
+    wording as `_decide` above — but tags WHICH rule fired ("rain" /
+    "forecast" / "freeze" / None) rather than a bare skip/no-skip, which is
+    what forecast predictions need to report skip_rain vs skip_forecast vs
+    skip_freeze. Deliberately kept separate from `_decide` (duplicated
+    comparisons instead of calling it) so the M3 skip-decision code path is
+    byte-for-byte untouched (M4 spec E5)."""
+    if snap.past24_mm >= settings.rain_lookback_mm:
+        return "rain", (
+            f"rain {_fmt(snap.past24_mm)}mm in last 24h"
+            f" (threshold {_fmt(settings.rain_lookback_mm)})"
+        )
+    if snap.next6_mm >= settings.forecast_lookahead_mm:
+        return "forecast", (
+            f"forecast {_fmt(snap.next6_mm)}mm next 6h"
+            f" (threshold {_fmt(settings.forecast_lookahead_mm)})"
+        )
+    if snap.current_temp_c <= settings.freeze_temp_c:
+        return "freeze", (
+            f"freeze guard: {_fmt(snap.current_temp_c)}°C"
+            f" (threshold {_fmt(settings.freeze_temp_c)})"
+        )
+    return None, None

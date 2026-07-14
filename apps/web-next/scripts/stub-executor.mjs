@@ -21,6 +21,18 @@
  *                                   (fetched_at defaults to now, enabled to
  *                                   true; pass any field to override).
  *   {"weather": null}               M3: weather disabled / never fetched
+ *   {"forecast": {"enabled": true, "weather": {...}, "hourly": [...],
+ *     "upcoming": [{"program_id":3,"program_name":"Lawn",
+ *       "at":"2026-07-14T06:00:00-04:00","prediction":"watering","note":null}]}}
+ *                                   M4.M: set the GET /api/forecast body
+ *                                   verbatim (docs/M4-MAP-SPEC.md); missing
+ *                                   fields default to enabled:false,
+ *                                   weather:null, hourly:[], upcoming:[].
+ *   {"forecast": null}              M4.M: reset to the disabled default
+ *   {"reachable": false}            (existing) also makes GET /api/forecast
+ *                                   respond 503, so the web route's 502
+ *                                   degraded-panel path is exercisable
+ *                                   without killing this process.
  */
 import http from "node:http";
 
@@ -43,6 +55,15 @@ const state = {
   nextScheduled: null,
   // M3: {fetched_at, past24_mm, next6_mm, current_temp_c, enabled} | null.
   weather: null,
+  // M4.M: GET /api/forecast body (docs/M4-MAP-SPEC.md) | null (disabled default).
+  forecast: null,
+};
+
+const DEFAULT_FORECAST = {
+  enabled: false,
+  weather: null,
+  hourly: [],
+  upcoming: [],
 };
 
 const now = () => Date.now();
@@ -141,6 +162,27 @@ const server = http.createServer(async (req, res) => {
     if ("program_run" in (body ?? {}) && body.program_run === null) {
       state.programRun = null;
     }
+    if ("forecast" in (body ?? {})) {
+      // M4.M: null resets to the disabled default; an object is stored
+      // verbatim (missing top-level fields fall back to the defaults) so QA
+      // can script exact predictions/badges through the endpoint's shape.
+      state.forecast =
+        body.forecast === null
+          ? null
+          : {
+              enabled: body.forecast.enabled ?? DEFAULT_FORECAST.enabled,
+              weather:
+                "weather" in body.forecast
+                  ? body.forecast.weather
+                  : DEFAULT_FORECAST.weather,
+              hourly: Array.isArray(body.forecast.hourly)
+                ? body.forecast.hourly
+                : DEFAULT_FORECAST.hourly,
+              upcoming: Array.isArray(body.forecast.upcoming)
+                ? body.forecast.upcoming
+                : DEFAULT_FORECAST.upcoming,
+            };
+    }
     if (body?.start_program_run) {
       const r = body.start_program_run;
       const steps = Array.isArray(r.steps) ? r.steps : [];
@@ -188,6 +230,16 @@ const server = http.createServer(async (req, res) => {
       next_scheduled: state.nextScheduled,
       weather: state.weather,
     });
+  }
+
+  // M4.M: unlike other GETs (which serve cached/last-known state while
+  // unreachable), /api/forecast has no cache concept here — treat
+  // `reachable: false` as a hard failure so QA can exercise the web route's
+  // 502-degraded-panel path via the existing control, without a real
+  // network outage.
+  if (req.method === "GET" && path === "/api/forecast") {
+    if (!state.reachable) return json(res, 503, { detail: "controller unreachable" });
+    return json(res, 200, state.forecast ?? DEFAULT_FORECAST);
   }
 
   if (!state.reachable && path.startsWith("/api/") && req.method !== "GET") {

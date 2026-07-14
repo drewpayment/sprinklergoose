@@ -4,6 +4,7 @@ import {
   ApiError,
   type ActiveZonesResponse,
   type DashboardStatus,
+  type ForecastResponse,
   type HistoryResponse,
   type ProgramInput,
   type ProgramView,
@@ -13,6 +14,7 @@ import {
   type RunNowResponse,
   type WeatherSettingsInput,
   type WeatherSettingsView,
+  type ZoneGeometry,
 } from "./types";
 
 /** Browser client for the app's OWN route handlers (never the executor). */
@@ -56,7 +58,14 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ days }),
     }),
-  updateZone: (id: number, patch: { name?: string; enabled?: boolean }) =>
+  updateZone: (
+    id: number,
+    patch: {
+      name?: string;
+      enabled?: boolean;
+      geometry?: ZoneGeometry | null;
+    },
+  ) =>
     request(`/api/zones/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -103,4 +112,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  // M4.M map + forecast
+  getForecast: () => request<ForecastResponse>("/api/forecast"),
 };

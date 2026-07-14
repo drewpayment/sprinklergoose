@@ -1,6 +1,9 @@
 // Shared shapes between the internal API routes and the client components.
 // The executor contract lives in docs/API.md; these are the app's merged views.
 
+import type { ZoneGeometry } from "@/db/schema";
+export type { ZoneGeometry, ZonePoint, ZonePolygon } from "@/db/schema";
+
 export interface ControllerInfo {
   model: string;
   firmware: string;
@@ -221,6 +224,56 @@ export interface ActiveZonesResponse {
 
 export interface RainDelayResponse {
   days: number;
+}
+
+// ---------------------------------------------------------------------------
+// M4.M zone map + weather forecast (docs/M4-MAP-SPEC.md)
+
+/** The app's view of a zone for the map page: config + placement. */
+export interface ZoneMapView {
+  id: number;
+  name: string;
+  enabled: boolean;
+  geometry: ZoneGeometry | null;
+}
+
+export interface ForecastWeather {
+  fetched_at: string;
+  past24_mm: number;
+  next6_mm: number;
+  current_temp_c: number;
+}
+
+export interface ForecastHourlyPoint {
+  /** UTC ISO timestamp. */
+  time: string;
+  precip_mm: number;
+  temp_c: number;
+}
+
+export type ForecastPrediction =
+  | "watering"
+  | "skip_rain"
+  | "skip_forecast"
+  | "skip_freeze"
+  | "rain_delay"
+  | "unknown";
+
+export interface ForecastUpcomingRun {
+  program_id: number;
+  program_name: string;
+  /** Executor local time with offset, e.g. "2026-07-14T06:00:00-04:00". */
+  at: string;
+  prediction: ForecastPrediction;
+  note: string | null;
+}
+
+/** GET /api/forecast response (executor GET /api/forecast, proxied). */
+export interface ForecastResponse {
+  enabled: boolean;
+  weather: ForecastWeather | null;
+  hourly: ForecastHourlyPoint[];
+  upcoming: ForecastUpcomingRun[];
 }
 
 export class ApiError extends Error {

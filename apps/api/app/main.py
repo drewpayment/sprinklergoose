@@ -8,12 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import Settings
 from .models import (
     ActiveZonesResponse,
+    ForecastResponse,
+    ForecastWeather,
+    HourlyPoint,
     NextScheduledInfo,
     ProgramRunInfo,
     RainDelay,
     RenameZoneRequest,
     StartZoneRequest,
     StatusResponse,
+    UpcomingRun,
     WeatherInfo,
     Zone,
 )
@@ -108,6 +112,47 @@ def create_app(
             weather = sched.weather_status()
             status.weather = WeatherInfo(**weather) if weather else None
         return status
+
+    @app.get("/api/forecast", response_model=ForecastResponse)
+    async def get_forecast() -> ForecastResponse:
+        # Never 500 on missing weather (M4 E4): no scheduler configured
+        # (no DATABASE_URL) means no program/weather data at all.
+        if sched is None:
+            return ForecastResponse(enabled=False, weather=None, hourly=[], upcoming=[])
+        rain_delay_days = service.cached_rain_delay_days()
+        result = sched.build_forecast(rain_delay_days)
+        return ForecastResponse(
+            enabled=result.enabled,
+            weather=(
+                ForecastWeather(
+                    fetched_at=result.weather.fetched_at.isoformat(),
+                    past24_mm=result.weather.past24_mm,
+                    next6_mm=result.weather.next6_mm,
+                    current_temp_c=result.weather.current_temp_c,
+                )
+                if result.weather is not None
+                else None
+            ),
+            hourly=[
+                HourlyPoint(
+                    time=bucket.time.isoformat(),
+                    precip_mm=bucket.precip_mm,
+                    temp_c=bucket.temp_c,
+                )
+                for bucket in result.hourly
+                if bucket.temp_c is not None
+            ],
+            upcoming=[
+                UpcomingRun(
+                    program_id=item.program_id,
+                    program_name=item.program_name,
+                    at=item.at.isoformat(),
+                    prediction=item.prediction,
+                    note=item.note,
+                )
+                for item in result.upcoming
+            ],
+        )
 
     @app.post("/api/zones/{zone_id}/start", response_model=ActiveZonesResponse)
     async def start_zone(zone_id: int, body: StartZoneRequest) -> ActiveZonesResponse:
