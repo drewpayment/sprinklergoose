@@ -2,6 +2,7 @@ import "server-only";
 import type {
   ActiveZonesResponse,
   ExecutorStatus,
+  ForecastResponse,
   RainDelayResponse,
 } from "./types";
 
@@ -66,4 +67,7 @@ export const executor = {
       method: "PUT",
       body: JSON.stringify({ days }),
     }),
+  // M4.M weather forecast (docs/M4-MAP-SPEC.md) — the executor is the single
+  // weather owner; web-next never calls Open-Meteo directly.
+  forecast: () => executorFetch<ForecastResponse>("/api/forecast"),
 };

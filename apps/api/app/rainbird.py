@@ -288,6 +288,17 @@ class RainbirdService:
     async def get_rain_delay(self) -> int:
         return int(await self._call("get_rain_delay"))
 
+    def cached_rain_delay_days(self) -> int | None:
+        """M4: the rain-delay day count from the most recent successful
+        get_status() poll, or None if status has never been polled. Reading
+        this adds NO module traffic — it is a pure cache lookup, for the
+        forecast endpoint's rain-delay-window prediction rule."""
+        return (
+            self._status_cache.rain_delay_days
+            if self._status_cache is not None
+            else None
+        )
+
     async def set_rain_delay(self, days: int) -> int:
         await self._call("set_rain_delay", days)
         return days

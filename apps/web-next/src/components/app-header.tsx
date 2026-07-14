@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const links = (admin: boolean) => [
   { href: "/", label: "Dashboard" },
+  { href: "/map", label: "Map" },
   { href: "/schedules", label: "Schedules" },
   { href: "/history", label: "History" },
   ...(admin

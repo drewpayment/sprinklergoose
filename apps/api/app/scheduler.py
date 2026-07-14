@@ -944,3 +944,19 @@ class Scheduler:
         """M3 status addition: the cached weather snapshot, or None when
         weather is disabled / never fetched / not configured at all."""
         return self.weather.status_weather() if self.weather is not None else None
+
+    def build_forecast(self, rain_delay_days: int | None):
+        """M4: GET /api/forecast payload data. Uses only already-cached
+        state (in-memory program config, the weather gate's cached
+        settings/snapshot, and a rain-delay day count the caller supplies
+        from its own cache) — never fetches weather or talks to the
+        controller."""
+        from .forecast import build_forecast as _build_forecast
+
+        return _build_forecast(
+            programs=self._programs.values(),
+            now=self._clock.now(),
+            tz=self._tz,
+            weather=self.weather,
+            rain_delay_days=rain_delay_days,
+        )

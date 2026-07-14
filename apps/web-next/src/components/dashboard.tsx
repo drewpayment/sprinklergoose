@@ -3,93 +3,41 @@
 // Port of the v1 dashboard (apps/web/src/App.tsx): 5s polling paused when
 // hidden, client-side countdown between polls, offline banner with cached
 // state, presets + custom durations, stop-all bar, rain sensor/delay chips.
+// Polling itself lives in the shared use-live-status hook (also used by the
+// M4.M map page) — this component's behavior is unchanged (docs/M4-MAP-SPEC.md W7).
 
 import { CalendarClock, CloudRain } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { QuickRunDialog } from "@/components/quick-run-dialog";
 import { RainDelayChip } from "@/components/rain-delay";
 import { ZoneCard } from "@/components/zone-card";
+import {
+  remainingForProgramStep,
+  remainingForZone,
+  useLiveStatus,
+} from "@/hooks/use-live-status";
 import { api } from "@/lib/api-client";
 import { formatClock, formatSeconds } from "@/lib/format";
 import { formatOccurrence } from "@/lib/schedule";
-import { ApiError, type DashboardStatus, type DashboardZone } from "@/lib/types";
-
-const POLL_MS = 5000;
+import { ApiError, type DashboardZone } from "@/lib/types";
 
 export function Dashboard({ admin }: { admin: boolean }) {
-  const [status, setStatus] = useState<DashboardStatus | null>(null);
-  const [fetchedAt, setFetchedAt] = useState(0);
-  const [fetchFailed, setFetchFailed] = useState(false);
+  const live = useLiveStatus();
+  const { status, offline, refresh } = live;
   const [expandedZone, setExpandedZone] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [now, setNow] = useState(0);
 
-  const refresh = useCallback(async () => {
-    try {
-      const s = await api.getStatus();
-      const t = Date.now();
-      setStatus(s);
-      setFetchedAt(t);
-      setNow(t);
-      setFetchFailed(false);
-    } catch {
-      setFetchFailed(true);
-    }
-  }, []);
-
-  // Poll every 5s; pause while the tab is hidden, refetch on return.
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const start = () => {
-      void refresh();
-      timer = setInterval(() => void refresh(), POLL_MS);
-    };
-    const stop = () => {
-      clearInterval(timer);
-      timer = undefined;
-    };
-    const onVisibility = () => {
-      stop();
-      if (!document.hidden) start();
-    };
-    start();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [refresh]);
-
-  const offline = fetchFailed || (status !== null && !status.reachable);
   const anyRunning = status?.zones.some((z) => z.active) ?? false;
   const programRun = status?.program_run ?? null;
-  const hasCountdown =
-    !offline &&
-    (programRun !== null ||
-      (status?.zones.some((z) => z.active && z.remaining_seconds !== null) ??
-        false));
 
-  // Tick the countdown down client-side between polls.
-  useEffect(() => {
-    if (!hasCountdown) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [hasCountdown]);
-
-  const remainingFor = (zone: DashboardZone): number | null => {
-    if (!zone.active || zone.remaining_seconds === null) return null;
-    if (offline) return zone.remaining_seconds; // frozen cached value
-    const elapsed = Math.max(0, Math.round((now - fetchedAt) / 1000));
-    return Math.max(0, zone.remaining_seconds - elapsed);
-  };
+  const remainingFor = (zone: DashboardZone): number | null =>
+    remainingForZone(zone, live);
 
   // Countdown for the running program's current step, ticked between polls.
   const programStepRemaining = (): number => {
     if (!programRun) return 0;
-    if (offline) return programRun.step_remaining_seconds; // frozen
-    const elapsed = Math.max(0, Math.round((now - fetchedAt) / 1000));
-    return Math.max(0, programRun.step_remaining_seconds - elapsed);
+    return remainingForProgramStep(programRun, live);
   };
 
   const programStepZoneName = (): string => {

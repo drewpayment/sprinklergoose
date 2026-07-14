@@ -27,12 +27,34 @@ export const zones = pgTable("zones", {
   id: integer("id").primaryKey(),
   name: varchar("name", { length: 40 }).notNull(),
   enabled: boolean("enabled").notNull().default(true),
+  /**
+   * M4.M (docs/M4-MAP-SPEC.md): map placement — a GeoJSON Point or Polygon
+   * (single ring, 3-100 vertices), or null when the zone hasn't been placed
+   * on the map yet. Validated in the route (src/lib/geometry-validation.ts),
+   * not the DB.
+   */
+  geometry: jsonb("geometry").$type<ZoneGeometry>(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
 
 export type ZoneConfig = typeof zones.$inferSelect;
+
+/** GeoJSON subset accepted for zone map placement (docs/M4-MAP-SPEC.md). */
+export interface ZonePoint {
+  type: "Point";
+  /** [lon, lat]. */
+  coordinates: [number, number];
+}
+
+export interface ZonePolygon {
+  type: "Polygon";
+  /** Single ring, 3-100 vertices: [[lon, lat], ...]. */
+  coordinates: [[number, number][]];
+}
+
+export type ZoneGeometry = ZonePoint | ZonePolygon;
 
 /**
  * M2 shared contract (docs/M2-SPEC.md): app-owned scheduling.

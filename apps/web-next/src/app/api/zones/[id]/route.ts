@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
-import { zones } from "@/db/schema";
+import { zones, type ZoneGeometry } from "@/db/schema";
+import { validateZoneGeometry } from "@/lib/geometry-validation";
 import {
   forbidden,
   getSession,
@@ -11,9 +12,10 @@ import {
 } from "@/lib/session";
 
 /**
- * Admin-only zone config: rename and/or enable/disable. Writes the app DB
- * (the zones table is the source of truth; the executor reads it — the old
- * executor rename endpoint is not used by this app).
+ * Admin-only zone config: rename, enable/disable, and/or place map geometry
+ * (docs/M4-MAP-SPEC.md). Writes the app DB (the zones table is the source of
+ * truth; the executor reads it — the old executor rename endpoint is not
+ * used by this app).
  */
 export async function PATCH(
   request: NextRequest,
@@ -32,7 +34,8 @@ export async function PATCH(
     return jsonError(422, "invalid body");
   }
 
-  const patch: { name?: string; enabled?: boolean } = {};
+  const patch: { name?: string; enabled?: boolean; geometry?: ZoneGeometry | null } =
+    {};
   if ("name" in body) {
     if (typeof body.name !== "string") return jsonError(422, "invalid name");
     const name = body.name.trim();
@@ -46,6 +49,11 @@ export async function PATCH(
       return jsonError(422, "invalid enabled flag");
     }
     patch.enabled = body.enabled;
+  }
+  if ("geometry" in body) {
+    const result = validateZoneGeometry(body.geometry);
+    if (!result.ok) return jsonError(400, result.detail);
+    patch.geometry = result.value;
   }
   if (Object.keys(patch).length === 0) {
     return jsonError(422, "nothing to update");

@@ -1,5 +1,7 @@
 """Pydantic schemas for the API contract (docs/API.md)."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -59,6 +61,51 @@ class StatusResponse(BaseModel):
     next_scheduled: NextScheduledInfo | None = None
     # M3 addition — null when weather is disabled or never fetched.
     weather: WeatherInfo | None = None
+
+
+class ForecastWeather(BaseModel):
+    """The 'current conditions' aggregates backing the forecast panel (M4).
+    Unlike WeatherInfo (the status-endpoint shape) this has no `enabled`
+    field — GET /api/forecast carries that at the top level instead."""
+
+    fetched_at: str  # ISO 8601, UTC
+    past24_mm: float
+    next6_mm: float
+    current_temp_c: float
+
+
+class HourlyPoint(BaseModel):
+    """One bucket of the 48h forecast strip (M4)."""
+
+    time: str  # ISO 8601, UTC
+    precip_mm: float
+    temp_c: float
+
+
+class UpcomingRun(BaseModel):
+    """One predicted occurrence of an enabled program in the next 48h (M4)."""
+
+    program_id: int
+    program_name: str
+    at: str  # ISO 8601, executor-local timezone — same convention as next_scheduled
+    prediction: Literal[
+        "watering",
+        "skip_rain",
+        "skip_forecast",
+        "skip_freeze",
+        "rain_delay",
+        "unknown",
+    ]
+    note: str | None = None
+
+
+class ForecastResponse(BaseModel):
+    """GET /api/forecast (M4)."""
+
+    enabled: bool
+    weather: ForecastWeather | None = None
+    hourly: list[HourlyPoint] = Field(default_factory=list)
+    upcoming: list[UpcomingRun] = Field(default_factory=list)
 
 
 class StartZoneRequest(BaseModel):
