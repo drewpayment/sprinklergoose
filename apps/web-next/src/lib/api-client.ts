@@ -9,6 +9,8 @@ import {
   type ProgramView,
   type RainDelayResponse,
   type RunNowResponse,
+  type WeatherSettingsInput,
+  type WeatherSettingsView,
 } from "./types";
 
 /** Browser client for the app's OWN route handlers (never the executor). */
@@ -86,4 +88,12 @@ export const api = {
     const qs = q.toString();
     return request<HistoryResponse>(`/api/history${qs ? `?${qs}` : ""}`);
   },
+  // M3 weather
+  getWeatherSettings: () =>
+    request<WeatherSettingsView>("/api/settings/weather"),
+  updateWeatherSettings: (input: WeatherSettingsInput) =>
+    request<WeatherSettingsView>("/api/settings/weather", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
 };

@@ -44,6 +44,8 @@ export async function GET() {
       // executors don't send these yet — default to null.
       program_run: status.program_run ?? null,
       next_scheduled: status.next_scheduled ?? null,
+      // M3: cached weather snapshot; null when disabled / never fetched.
+      weather: status.weather ?? null,
     };
     return NextResponse.json(body);
   } catch (e) {

@@ -41,6 +41,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from .weather import WeatherGate, WeatherSettings, WeatherSource
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEZONE = "America/Detroit"
@@ -185,6 +187,7 @@ class SchedulerStore(Protocol):
         self, run_id: int, status: str, note: str | None, now: datetime
     ) -> None: ...
     async def finalize_orphans(self, now: datetime) -> int: ...
+    async def fetch_weather_settings(self) -> WeatherSettings | None: ...
     async def listen(self, on_event) -> None: ...  # returns on connection loss
     async def close(self) -> None: ...
 
@@ -272,6 +275,7 @@ class Scheduler:
         minute_seconds: float = 60.0,  # test seam: real seconds per "minute"
         lookback: timedelta = EVAL_LOOKBACK,
         horizon: timedelta = NEXT_HORIZON,
+        weather_source: WeatherSource | None = None,
     ) -> None:
         self._store = store
         self._service = service
@@ -283,6 +287,10 @@ class Scheduler:
         self._minute_seconds = minute_seconds
         self._lookback = lookback
         self._horizon = horizon
+        # M3: weather gate (None ⇒ no weather evaluation, M2 behavior).
+        self.weather: WeatherGate | None = (
+            WeatherGate(weather_source) if weather_source is not None else None
+        )
 
         self._programs: dict[int, Program] = {}
         self._fired: set[tuple[int, datetime]] = set()  # derived from program_runs
@@ -391,6 +399,18 @@ class Scheduler:
         self._fired = {k for k in (self._fired | keys) if k[1] >= window_start}
         for req in await self._store.claim_run_requests():
             await self._admit_run_now(req)
+        if self.weather is not None:
+            # Settings ride the same NOTIFY/15s-poll cycle as programs
+            # (M3.E5/E6). A failed read keeps the previous settings — weather
+            # config trouble must never stall program refresh.
+            try:
+                self.weather.update_settings(
+                    await self._store.fetch_weather_settings()
+                )
+            except Exception as err:
+                logger.warning(
+                    "weather settings unavailable (%s); keeping previous", err
+                )
         self._last_refresh = now
         self._refresh_needed = False
 
@@ -547,6 +567,7 @@ class Scheduler:
         run_id: int | None = None
         in_flight: int | None = None
         started_any = False
+        weather_note: str | None = None
         try:
             if item.initiator == INITIATOR_SCHEDULE and program.respect_rain_delay:
                 days = 0
@@ -567,6 +588,24 @@ class Scheduler:
                         initiator=item.initiator,
                     )
                     return
+                # M3: weather comes strictly AFTER the rain-delay check (an
+                # active rain delay wins, M3.E4) and only for scheduled runs
+                # of rain-delay-respecting programs — run-now bypasses weather
+                # entirely (M3.E3). evaluate() never raises: failure paths
+                # water normally with a "no weather data" note (M3.E2).
+                if self.weather is not None:
+                    decision = await self.weather.evaluate(self._clock.now())
+                    if decision.skip:
+                        await self._record_terminal(
+                            program.id,
+                            program.name,
+                            item.scheduled_for,
+                            "skipped_weather",
+                            decision.note,
+                            initiator=item.initiator,
+                        )
+                        return
+                    weather_note = decision.note  # "no weather data …" or None
             zones = await self._store.fetch_zones()
             step_rows = [
                 (
@@ -650,6 +689,10 @@ class Scheduler:
                 except Exception as err:
                     logger.warning("post-run stop_irrigation failed: %s", err)
             status, note = _summarize(outcomes, skipped)
+            if weather_note is not None:
+                # History shows its work (M3.E2): the run watered normally
+                # because weather data was unavailable — say so on the row.
+                note = f"{note}; {weather_note}" if note else weather_note
             await self._store.finish_run(run_id, status, note, self._clock.now())
         except asyncio.CancelledError:
             # The canceller (stop-all / manual start / shutdown) owns the
@@ -779,3 +822,8 @@ class Scheduler:
             else None
         )
         return program_run, next_scheduled
+
+    def weather_status(self) -> dict | None:
+        """M3 status addition: the cached weather snapshot, or None when
+        weather is disabled / never fetched / not configured at all."""
+        return self.weather.status_weather() if self.weather is not None else None

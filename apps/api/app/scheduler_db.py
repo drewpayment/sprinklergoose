@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .scheduler import Program, ProgramStep, RunRequest, ZoneRow
+from .weather import WeatherSettings
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,30 @@ class AsyncpgSchedulerStore:
             (row["program_id"], row["scheduled_for"].astimezone(UTC))
             for row in rows
         }
+
+    async def fetch_weather_settings(self) -> WeatherSettings | None:
+        """M3: the singleton weather_settings row (web-next owns the DDL).
+        Returns None when the row is absent; raises on connection trouble —
+        the scheduler keeps its previous settings in that case."""
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
+            "SELECT enabled, latitude, longitude, rain_lookback_mm,"
+            " forecast_probability, forecast_lookahead_mm, freeze_temp_c,"
+            " updated_at"
+            " FROM weather_settings WHERE id = 1"
+        )
+        if row is None:
+            return None
+        return WeatherSettings(
+            enabled=row["enabled"],
+            latitude=row["latitude"],
+            longitude=row["longitude"],
+            rain_lookback_mm=row["rain_lookback_mm"],
+            forecast_probability=row["forecast_probability"],
+            forecast_lookahead_mm=row["forecast_lookahead_mm"],
+            freeze_temp_c=row["freeze_temp_c"],
+            updated_at=row["updated_at"].astimezone(UTC),
+        )
 
     # --------------------------------------------------------------- claims
 

@@ -4,7 +4,7 @@
 // hidden, client-side countdown between polls, offline banner with cached
 // state, presets + custom durations, stop-all bar, rain sensor/delay chips.
 
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, CloudRain } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { RainDelayChip } from "@/components/rain-delay";
@@ -228,6 +228,16 @@ export function Dashboard({ admin }: { admin: boolean }) {
                 {formatOccurrence(new Date(status.next_scheduled.at))}
               </span>
             )}
+            {status.weather && (
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-full border bg-card px-3.5 py-2 text-sm shadow-(--shadow-card)">
+                <CloudRain
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
+                24h: {formatMm(status.weather.past24_mm)} · next 6h:{" "}
+                {formatMm(status.weather.next6_mm)}
+              </span>
+            )}
           </div>
 
           <main className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -275,4 +285,9 @@ export function Dashboard({ admin }: { admin: boolean }) {
 
 function capitalize(s: string): string {
   return s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+/** "9.2mm" with at most one decimal (M3 weather chip). */
+function formatMm(mm: number): string {
+  return `${Math.round(mm * 10) / 10}mm`;
 }

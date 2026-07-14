@@ -14,6 +14,7 @@ from .models import (
     RenameZoneRequest,
     StartZoneRequest,
     StatusResponse,
+    WeatherInfo,
     Zone,
 )
 from .rainbird import ControllerUnreachableError, RainbirdService, UnknownZoneError
@@ -49,11 +50,13 @@ def create_app(
     enablement = zone_enablement  # None ⇒ exact v1 behavior (no DB configured)
     if scheduler is None and settings.database_url:
         from .scheduler_db import AsyncpgSchedulerStore
+        from .weather import OpenMeteoWeatherSource
 
         scheduler = Scheduler(
             store=AsyncpgSchedulerStore(settings.database_url),
             service=service,
             timezone=settings.schedule_timezone,
+            weather_source=OpenMeteoWeatherSource(),
         )
     sched = scheduler  # None ⇒ no scheduling (no DB configured)
 
@@ -102,6 +105,8 @@ def create_app(
             status.next_scheduled = (
                 NextScheduledInfo(**next_scheduled) if next_scheduled else None
             )
+            weather = sched.weather_status()
+            status.weather = WeatherInfo(**weather) if weather else None
         return status
 
     @app.post("/api/zones/{zone_id}/start", response_model=ActiveZonesResponse)

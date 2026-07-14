@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
-import { programRuns, programRunSteps } from "@/db/schema";
+import { programRuns, programRunSteps, programs } from "@/db/schema";
 import { getSession, jsonError, unauthorized } from "@/lib/session";
 import {
   RUN_STATUSES,
@@ -48,8 +48,11 @@ export async function GET(request: NextRequest) {
   const happenedAt = sql`coalesce(${programRuns.startedAt}, ${programRuns.scheduledFor}, ${programRuns.finishedAt})`;
   const [runRows, [{ total }]] = await Promise.all([
     db
-      .select()
+      // Left join: whether the program still exists and is enabled (M3 gates
+      // "Water anyway" on it; deleted programs yield null).
+      .select({ run: programRuns, programEnabled: programs.enabled })
       .from(programRuns)
+      .leftJoin(programs, eq(programRuns.programId, programs.id))
       .where(where)
       .orderBy(desc(happenedAt), desc(programRuns.id))
       .limit(PAGE_SIZE)
@@ -65,7 +68,7 @@ export async function GET(request: NextRequest) {
           .where(
             inArray(
               programRunSteps.runId,
-              runRows.map((r) => r.id),
+              runRows.map((r) => r.run.id),
             ),
           )
           .orderBy(asc(programRunSteps.position))
@@ -87,7 +90,7 @@ export async function GET(request: NextRequest) {
   }
 
   const body: HistoryResponse = {
-    runs: runRows.map((r) => ({
+    runs: runRows.map(({ run: r, programEnabled }) => ({
       id: r.id,
       program_id: r.programId,
       program_name: r.programName,
@@ -97,6 +100,7 @@ export async function GET(request: NextRequest) {
       started_at: iso(r.startedAt),
       finished_at: iso(r.finishedAt),
       note: r.note,
+      program_enabled: r.programId === null ? null : (programEnabled ?? null),
       steps: stepsByRun.get(r.id) ?? [],
     })),
     total,

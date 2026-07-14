@@ -1,15 +1,18 @@
 "use client";
 
 // Run history (M2): reverse-chron, filterable by program + status, paginated,
-// with expandable per-step detail. Read-only — the executor writes the rows.
+// with expandable per-step detail. The executor writes the rows; the only
+// write here is M3's "Water anyway" — a run_request for a skipped program.
 
-import { CalendarClock, ChevronDown, User } from "lucide-react";
+import { CalendarClock, ChevronDown, Droplets, User } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { RunStatusBadge, StepOutcomeBadge } from "@/components/run-status-badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { formatSeconds } from "@/lib/format";
 import {
+  ApiError,
   RUN_STATUSES,
   type HistoryResponse,
   type HistoryRun,
@@ -23,8 +26,13 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
   cancelled: "Cancelled",
   skipped_rain_delay: "Rain delay",
+  skipped_weather: "Weather skip",
   missed: "Missed",
 };
+
+/** Rows offering the M3 "Water anyway" override: automation skipped, a
+ * human may overrule (both weather and rain-delay skips). */
+const OVERRIDABLE_STATUSES = new Set(["skipped_weather", "skipped_rain_delay"]);
 
 const selectClass =
   "min-h-10 appearance-none rounded-xl border border-input bg-card py-1 pr-8 pl-3 text-sm font-medium shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -61,6 +69,7 @@ export function HistoryList({
   const [programFilter, setProgramFilter] = useState<number | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [wateringRun, setWateringRun] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +95,23 @@ export function HistoryList({
   }, [load]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
+
+  /** M3 "Water anyway": creates a run_request for the skipped program via
+   * the existing run-now mechanism (member+ allowed). */
+  const waterAnyway = async (run: HistoryRun) => {
+    if (run.program_id === null) return;
+    setWateringRun(run.id);
+    try {
+      await api.runProgramNow(run.program_id);
+      toast.success(`${run.program_name} will start shortly`, {
+        description: "Watering was requested despite the skip.",
+      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.detail : "Request failed");
+    } finally {
+      setWateringRun(null);
+    }
+  };
 
   return (
     <div>
@@ -223,6 +249,35 @@ export function HistoryList({
                     )}
                   />
                 </button>
+
+                {OVERRIDABLE_STATUSES.has(run.status) && (
+                  <div className="flex min-h-12 items-center justify-between gap-3 border-t px-4 py-2">
+                    {run.program_id !== null && run.program_enabled ? (
+                      <>
+                        <span className="text-[13px] text-muted-foreground">
+                          Overrule the skip and water now.
+                        </span>
+                        <Button
+                          variant="outline"
+                          disabled={wateringRun !== null}
+                          onClick={() => void waterAnyway(run)}
+                          className="min-h-9 rounded-xl px-3 font-semibold"
+                        >
+                          <Droplets data-slot="icon" />
+                          {wateringRun === run.id
+                            ? "Requesting…"
+                            : "Water anyway"}
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-[13px] text-muted-foreground italic">
+                        {run.program_id === null
+                          ? "Program was deleted — it can't be watered anymore."
+                          : "Program is disabled — enable it to water anyway."}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {isOpen && (
                   <div className="border-t px-4 pt-3 pb-4">

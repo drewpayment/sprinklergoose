@@ -73,7 +73,7 @@ CREATE TABLE program_runs (
   initiator     text NOT NULL,
   status        text NOT NULL CHECK (status IN
                 ('running','completed','partial','failed','cancelled',
-                 'skipped_rain_delay','missed')),
+                 'skipped_rain_delay','skipped_weather','missed')),
   started_at    timestamptz,
   finished_at   timestamptz,
   note          text
@@ -90,6 +90,18 @@ CREATE TABLE program_run_steps (
   outcome    text CHECK (outcome IN
              ('completed','cancelled','failed','skipped_disabled'))
 );
+CREATE TABLE weather_settings (
+  id                    int PRIMARY KEY CHECK (id = 1),
+  enabled               boolean NOT NULL DEFAULT false,
+  latitude              double precision,
+  longitude             double precision,
+  rain_lookback_mm      double precision NOT NULL DEFAULT 6.0,
+  forecast_probability  int NOT NULL DEFAULT 70,
+  forecast_lookahead_mm double precision NOT NULL DEFAULT 4.0,
+  freeze_temp_c         double precision NOT NULL DEFAULT 1.0,
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO weather_settings (id) VALUES (1);
 INSERT INTO zones (id, name, enabled) VALUES
   (1, 'Front Lawn', true), (2, 'Back Lawn', true), (3, 'Side Beds', true),
   (4, 'Garden', true), (5, 'Front Beds', true),
@@ -175,6 +187,12 @@ async def db(pg_dsn):
     await conn.execute(
         "TRUNCATE program_run_steps, program_runs, run_requests,"
         " program_steps, programs RESTART IDENTITY CASCADE"
+    )
+    await conn.execute(
+        "UPDATE weather_settings SET enabled = false, latitude = NULL,"
+        " longitude = NULL, rain_lookback_mm = 6.0, forecast_probability = 70,"
+        " forecast_lookahead_mm = 4.0, freeze_temp_c = 1.0, updated_at = now()"
+        " WHERE id = 1"
     )
     yield conn
     await conn.close()
@@ -409,3 +427,90 @@ async def test_orphaned_running_row_finalized_on_startup(rig):
     assert step["outcome"] == "cancelled"
     assert step["finished_at"] is not None
     assert rig.controller.call_count("irrigate_zone") == 0
+
+
+# ---------------------------------------------------------- M3: weather + PG
+
+
+async def test_fetch_weather_settings_roundtrip(rig):
+    """The store reads the web-owned singleton row into WeatherSettings."""
+    settings = await rig.store.fetch_weather_settings()
+    assert settings is not None
+    assert settings.enabled is False
+    assert settings.latitude is None and settings.longitude is None
+    assert settings.rain_lookback_mm == 6.0
+    assert settings.forecast_probability == 70
+    assert settings.forecast_lookahead_mm == 4.0
+    assert settings.freeze_temp_c == 1.0
+    assert settings.updated_at is not None
+
+    await rig.db.execute(
+        "UPDATE weather_settings SET enabled = true, latitude = 42.33,"
+        " longitude = -83.05, rain_lookback_mm = 8.5, updated_at = now()"
+        " WHERE id = 1"
+    )
+    settings = await rig.store.fetch_weather_settings()
+    assert settings.enabled is True
+    assert settings.latitude == 42.33
+    assert settings.longitude == -83.05
+    assert settings.rain_lookback_mm == 8.5
+
+
+async def test_scheduled_run_skipped_weather_lands_in_real_postgres(
+    pg_dsn, db, zone_names_file
+):
+    """End-to-end against real SQL: weather enabled + skip-worthy conditions
+    -> a skipped_weather row (exercising the extended status CHECK), zero
+    module commands, and the note showing the values used."""
+    from .scheduler_testkit import FakeWeatherSource
+
+    await db.execute(
+        "UPDATE weather_settings SET enabled = true, latitude = 42.33,"
+        " longitude = -83.05, rain_lookback_mm = 6.0, updated_at = now()"
+        " WHERE id = 1"
+    )
+    occurrence_local = (datetime.now(TZ) + timedelta(seconds=6)).replace(
+        microsecond=0
+    )
+    await insert_program(db, "Wet Morning", [occurrence_local.time()], [(1, 1)])
+
+    controller = FakeController(latency=0.005)
+    service = RainbirdService(
+        host="127.0.0.1",
+        password="test",
+        zone_names=ZoneNameStore(zone_names_file),
+        controller_factory=lambda: controller,
+    )
+    source = FakeWeatherSource(past24_mm=9.2)
+    scheduler = Scheduler(
+        store=AsyncpgSchedulerStore(pg_dsn),
+        service=service,
+        timezone="America/Detroit",
+        minute_seconds=0.3,
+        weather_source=source,
+    )
+    try:
+        await scheduler.start()
+        await wait_until(lambda: scheduler._ready, timeout=10)
+
+        async def skipped_row():
+            return await db.fetchrow(
+                "SELECT * FROM program_runs WHERE status = 'skipped_weather'"
+            )
+
+        deadline = _time.monotonic() + 30
+        row = None
+        while _time.monotonic() < deadline:
+            row = await skipped_row()
+            if row is not None:
+                break
+            await asyncio.sleep(0.2)
+        assert row is not None, "no skipped_weather row appeared"
+        assert row["note"] == "rain 9.2mm in last 24h (threshold 6.0)"
+        assert row["initiator"] == "schedule"
+        assert row["scheduled_for"] == occurrence_local.astimezone(UTC)
+        assert controller.call_count("irrigate_zone") == 0
+        assert source.fetches == 1
+    finally:
+        await scheduler.stop()
+        await service.close()
