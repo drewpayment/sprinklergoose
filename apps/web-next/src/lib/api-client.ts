@@ -5,6 +5,7 @@ import {
   type ActiveZonesResponse,
   type DashboardStatus,
   type ForecastResponse,
+  type GeocodeResult,
   type HistoryResponse,
   type ProgramInput,
   type ProgramView,
@@ -114,4 +115,9 @@ export const api = {
     }),
   // M4.M map + forecast
   getForecast: () => request<ForecastResponse>("/api/forecast"),
+  // M4.M.1 wayfinding
+  geocode: (q: string, signal?: AbortSignal) =>
+    request<GeocodeResult[]>(`/api/geocode?q=${encodeURIComponent(q)}`, {
+      signal,
+    }),
 };

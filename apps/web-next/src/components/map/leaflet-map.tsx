@@ -5,21 +5,31 @@
 // with `ssr: false`. Never imported anywhere else.
 
 import "leaflet/dist/leaflet.css";
-import { useMemo, useState } from "react";
+import type { Map as LeafletMapInstance } from "leaflet";
+import { useMemo, useRef, useState } from "react";
 import {
+  Circle,
   MapContainer,
   Marker,
   Polygon,
   Polyline,
+  Popup,
   TileLayer,
   Tooltip,
   useMapEvents,
 } from "react-leaflet";
 import { formatSeconds } from "@/lib/format";
-import type { ZoneMapView } from "@/lib/types";
+import type { GeocodeResult, ZoneMapView } from "@/lib/types";
 import { computeInitialView, type LatLngTuple } from "./initial-view";
-import { createVertexIcon, createZoneIcon } from "./zone-icon";
+import {
+  createHomeIcon,
+  createLocateDotIcon,
+  createSearchResultIcon,
+  createVertexIcon,
+  createZoneIcon,
+} from "./zone-icon";
 import { zoneColor } from "./zone-colors";
+import { WayfindingControls, type LocateFix } from "./wayfinding-controls";
 
 const ESRI_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -188,6 +198,15 @@ export function LeafletMap({
   const [baseLayer, setBaseLayer] = useState<"satellite" | "street">(
     "satellite",
   );
+  // Wayfinding (docs/M4-MAP-SPEC.md addendum): search result + locate-me
+  // fix are ephemeral UI state only — never persisted, never written to the
+  // DB. mapRef lets the sibling WayfindingControls tree (outside
+  // react-leaflet's context) imperatively pan/zoom the map.
+  const mapRef = useRef<LeafletMapInstance | null>(null);
+  const [searchMarker, setSearchMarker] = useState<GeocodeResult | null>(
+    null,
+  );
+  const [locateFix, setLocateFix] = useState<LocateFix | null>(null);
 
   const view = useMemo(
     () => computeInitialView(zones, fallbackCenter),
@@ -210,6 +229,7 @@ export function LeafletMap({
   return (
     <div className="relative h-full w-full">
       <MapContainer
+        ref={mapRef}
         {...(view.kind === "bounds"
           ? { bounds: view.bounds }
           : { center: view.center, zoom: view.zoom })}
@@ -220,6 +240,56 @@ export function LeafletMap({
           <TileLayer url={ESRI_URL} attribution={ESRI_ATTRIBUTION} />
         ) : (
           <TileLayer url={OSM_URL} attribution={OSM_ATTRIBUTION} />
+        )}
+
+        {/* Home anchor (W8) — the weather-settings location, rendered with
+            a house glyph so it's never confused with a zone pin. */}
+        {fallbackCenter && (
+          <Marker
+            position={[fallbackCenter.lat, fallbackCenter.lon]}
+            icon={createHomeIcon()}
+          >
+            <Tooltip direction="top" className="zone-name-tooltip">
+              Home
+            </Tooltip>
+          </Marker>
+        )}
+
+        {/* Search result (W9) — temporary, dismissable via the popup's
+            close button or by clicking elsewhere; never persisted. */}
+        {searchMarker && (
+          <Marker
+            position={[searchMarker.lat, searchMarker.lon]}
+            icon={createSearchResultIcon()}
+            eventHandlers={{
+              add: (e) => e.target.openPopup(),
+              popupclose: () => setSearchMarker(null),
+            }}
+          >
+            <Popup>{searchMarker.display_name}</Popup>
+          </Marker>
+        )}
+
+        {/* Locate-me fix (W10) — blue dot + accuracy circle, temporary,
+            never persisted. */}
+        {locateFix && (
+          <>
+            <Circle
+              center={[locateFix.lat, locateFix.lon]}
+              radius={locateFix.accuracy}
+              pathOptions={{
+                color: "#2563eb",
+                weight: 1,
+                fillColor: "#2563eb",
+                fillOpacity: 0.12,
+              }}
+            />
+            <Marker
+              position={[locateFix.lat, locateFix.lon]}
+              icon={createLocateDotIcon()}
+              interactive={false}
+            />
+          </>
         )}
 
         {zones.map((zone) => {
@@ -296,6 +366,13 @@ export function LeafletMap({
       </MapContainer>
 
       <BaseLayerToggle layer={baseLayer} onChange={setBaseLayer} />
+
+      <WayfindingControls
+        mapRef={mapRef}
+        homeCenter={fallbackCenter}
+        onSearchSelect={setSearchMarker}
+        onLocateFix={setLocateFix}
+      />
 
       {editMode && tool !== null && (
         <div className="pointer-events-none absolute top-3 left-3 z-[1000] rounded-lg border bg-card px-3 py-1.5 text-[12.5px] font-medium shadow-(--shadow-card)">

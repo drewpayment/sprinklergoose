@@ -276,6 +276,16 @@ export interface ForecastResponse {
   upcoming: ForecastUpcomingRun[];
 }
 
+// ---------------------------------------------------------------------------
+// M4.M.1 wayfinding (docs/M4-MAP-SPEC.md addendum)
+
+/** GET /api/geocode response entry (proxied Nominatim search result). */
+export interface GeocodeResult {
+  display_name: string;
+  lat: number;
+  lon: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

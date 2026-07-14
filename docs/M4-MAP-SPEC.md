@@ -133,6 +133,44 @@ A new member-visible **Map** page in `apps/web-next`:
   behaviors). QA drives running-zone animation via the existing
   `{"start_program_run": …}` control.
 
+### Wayfinding (M4.M.1 addendum)
+
+Controls to orient and move around the map, all rendered as on-map controls
+consistent with Leaflet's control styling (or overlaid shadcn buttons matching
+the existing toggle):
+
+- **Home anchor**: when `weather_settings.latitude/longitude` is set, render a
+  distinct "home" marker at that point (house icon, not confusable with zone
+  pins) and a **Home button** on the map that recenters/zooms to it. Hidden when
+  no location is set.
+- **Location search**: a search box on the map (collapsible on mobile).
+  Geocoding via **Nominatim** (`https://nominatim.openstreetmap.org/search`,
+  format=jsonv2, limit 5), proxied through a new session-required route
+  `GET /api/geocode?q=…` so the server sets a descriptive `User-Agent`
+  (per Nominatim policy) — the browser never calls Nominatim directly. Client
+  debounces ≥ 500 ms, min 3 chars, shows result list (display name), selecting
+  a result pans/zooms the map there and drops a temporary marker (dismissable,
+  not persisted). Route returns 502-style degraded JSON on upstream failure;
+  UI shows "search unavailable" state, never crashes.
+- **Locate me**: a button using browser geolocation (`map.locate()` /
+  `navigator.geolocation`) that pans/zooms to the user's position with a dot +
+  accuracy circle (temporary, not persisted). On permission denied/unavailable,
+  show a toast — no crash. (Secure-context feature: works on localhost and
+  HTTPS prod.)
+- Search/locate markers are ephemeral UI only — nothing is written to the DB;
+  zone geometry editing is unchanged.
+
+Acceptance criteria:
+- **W8** Home marker renders at the weather location and the Home button
+  recenters to it; both absent when no weather location is set.
+- **W9** Searching pans to a selected result with a temporary marker;
+  `GET /api/geocode` requires a session (401 otherwise) and degrades cleanly
+  when upstream fails.
+- **W10** Locate-me pans to the mocked browser location with dot + accuracy
+  circle; permission-denied shows a toast and leaves the map usable.
+- **W11** All three controls usable at 390×844 and desktop, light + dark; no
+  regression to W1–W7 behaviors.
+
 ### Non-goals (M4.M)
 
 - No per-zone weather, no wind rules, no probability rule (still reserved), no

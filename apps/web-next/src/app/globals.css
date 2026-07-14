@@ -237,3 +237,62 @@ button {
   border: 2px solid white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
+
+/*
+ * Wayfinding (docs/M4-MAP-SPEC.md addendum) — home anchor marker and
+ * locate-me "you are here" dot. Deliberately not the teardrop zone-pin
+ * shape (zone-icon.ts createHomeIcon / createLocateDotIcon).
+ */
+
+.home-pin-wrapper {
+  background: transparent;
+  border: none;
+}
+.home-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #1e293b;
+  border: 2.5px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.locate-dot-wrapper {
+  background: transparent;
+  border: none;
+}
+.locate-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2.5px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.locate-dot-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #2563eb;
+  opacity: 0.5;
+  animation: zone-pin-pulse 1.7s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locate-dot-halo {
+    animation-duration: 3.5s;
+  }
+}
