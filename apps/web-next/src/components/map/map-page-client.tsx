@@ -226,6 +226,15 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
       </div>
 
       <div className="w-full md:w-[380px] md:flex-none lg:flex lg:h-full lg:min-h-0 lg:w-auto lg:flex-col lg:gap-4 lg:overflow-y-auto lg:pr-1">
+        {/* Mirrors the admin edit-mode row's 44px (h-8 Button + mb-3) so the
+            sidebar's first card aligns with the map top once the columns sit
+            side by side. On lg the column's own gap-4 supplies 16px of it. */}
+        {admin && (
+          <div
+            aria-hidden="true"
+            className="mb-3 hidden h-8 flex-none md:block lg:mb-0 lg:h-7"
+          />
+        )}
         {editPanel && (
           <div className="hidden lg:block lg:flex-none">{editPanel}</div>
         )}
