@@ -303,7 +303,9 @@ async def test_run_now_bypasses_weather_entirely(store, irrigation, clock, sourc
     assert run["initiator"] == "drew.payment@gmail.com"
     assert run["scheduled_for"] is None
     assert irrigation.start_calls() == [(1, 1)]
-    assert source.fetches == 0  # not even a fetch
+    # One fetch: the refresh-cycle warm-up (forecast cache fix). The run-now
+    # decision itself never consults weather — proven by "completed" above.
+    assert source.fetches == 1
 
 
 async def test_program_not_respecting_rain_delay_skips_weather_too(
@@ -319,7 +321,8 @@ async def test_program_not_respecting_rain_delay_skips_weather_too(
     await run_to_completion(clock, 1)
 
     assert store.runs[0]["status"] == "completed"
-    assert source.fetches == 0
+    # Refresh-cycle warm-up only — the decision path skipped weather.
+    assert source.fetches == 1
 
 
 # ------------------------------------------------ M3.E4: rain delay ordering
@@ -337,7 +340,9 @@ async def test_active_rain_delay_wins_over_weather(store, irrigation, clock, sou
     run = store.runs[0]
     assert run["status"] == "skipped_rain_delay"  # not skipped_weather
     assert "rain delay" in run["note"]
-    assert source.fetches == 0  # weather never consulted behind a rain delay
+    # Refresh-cycle warm-up only — behind a rain delay the decision never
+    # consults weather (status/note above prove rain delay won).
+    assert source.fetches == 1
 
 
 # --------------------------------------------------- M3.E5: cache semantics
