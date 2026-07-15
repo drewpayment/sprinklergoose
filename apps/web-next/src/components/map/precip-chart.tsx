@@ -1,8 +1,11 @@
 // Hand-rolled 48h precip bars + temp line (docs/M4-MAP-SPEC.md: "no chart
 // library"). Plain SVG, scaled via viewBox so it's responsive without JS
-// measuring.
+// measuring. Scaling math stays on the raw metric values (unit conversion
+// is linear, so the shapes are identical) — `units` only swaps the legend
+// labels.
 
 import type { ForecastHourlyPoint } from "@/lib/types";
+import type { Units } from "@/lib/units";
 
 const WIDTH = 600;
 const HEIGHT = 160;
@@ -10,7 +13,13 @@ const PAD_TOP = 12;
 const PAD_BOTTOM = 22;
 const PAD_X = 4;
 
-export function PrecipChart({ hourly }: { hourly: ForecastHourlyPoint[] }) {
+export function PrecipChart({
+  hourly,
+  units,
+}: {
+  hourly: ForecastHourlyPoint[];
+  units: Units;
+}) {
   if (hourly.length === 0) {
     return (
       <p className="text-[13px] text-muted-foreground">
@@ -95,7 +104,7 @@ export function PrecipChart({ hourly }: { hourly: ForecastHourlyPoint[] }) {
             className="h-2 w-2 rounded-xs"
             style={{ background: "var(--primary)", opacity: 0.5 }}
           />
-          Precip (mm)
+          Precip ({units === "imperial" ? "in" : "mm"})
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -103,7 +112,7 @@ export function PrecipChart({ hourly }: { hourly: ForecastHourlyPoint[] }) {
             className="h-0.5 w-3"
             style={{ background: "#f59e0b" }}
           />
-          Temp (°C)
+          Temp ({units === "imperial" ? "°F" : "°C"})
         </span>
       </div>
     </div>

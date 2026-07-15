@@ -13,6 +13,9 @@ export const user = pgTable("user", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
   role: text("role"),
+  // Display-unit preference ("metric" | "imperial"). Display-only: stored
+  // weather values and API payloads stay metric everywhere.
+  units: text("units").default("metric").notNull(),
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),

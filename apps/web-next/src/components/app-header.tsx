@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useUnits } from "@/components/units-provider";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ export function AppHeader({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { units, setUnits } = useUnits();
 
   const signOut = async () => {
     await authClient.signOut();
@@ -59,6 +61,26 @@ export function AppHeader({
             </Link>
           ))}
         </nav>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() =>
+            setUnits(units === "metric" ? "imperial" : "metric")
+          }
+          aria-label={
+            units === "metric"
+              ? "Switch to imperial units (°F, inches)"
+              : "Switch to metric units (°C, mm)"
+          }
+          title={
+            units === "metric"
+              ? "Units: °C / mm — switch to °F / in"
+              : "Units: °F / in — switch to °C / mm"
+          }
+          className="text-[13px] font-semibold text-muted-foreground"
+        >
+          {units === "metric" ? "°C" : "°F"}
+        </Button>
         <Button
           variant="ghost"
           size="icon"

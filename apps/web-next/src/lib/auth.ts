@@ -17,6 +17,17 @@ export const auth = betterAuth({
     // Public registration is disabled: the seeded admin creates all accounts.
     disableSignUp: true,
   },
+  user: {
+    additionalFields: {
+      // "metric" | "imperial" display preference; users set their own via
+      // authClient.updateUser. Stored weather values stay metric.
+      units: {
+        type: "string",
+        defaultValue: "metric",
+        input: true,
+      },
+    },
+  },
   plugins: [
     admin({
       ac,

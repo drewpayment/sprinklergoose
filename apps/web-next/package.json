@@ -11,6 +11,7 @@
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx scripts/seed.ts",
     "stub-executor": "node scripts/stub-executor.mjs",
+    "stub-weather": "node scripts/stub-real-weather.mjs",
     "db:bootstrap": "drizzle-kit migrate && tsx scripts/seed.ts"
   },
   "dependencies": {
