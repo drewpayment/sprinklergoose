@@ -8,9 +8,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { useUnits } from "@/components/units-provider";
 import { api } from "@/lib/api-client";
 import { formatOccurrence } from "@/lib/schedule";
 import type { ForecastPrediction, ForecastResponse } from "@/lib/types";
+import { formatPrecip, formatTemp } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { PrecipChart } from "./precip-chart";
 
@@ -50,15 +52,8 @@ const PREDICTION_STYLES: Record<
   },
 };
 
-function formatMm(mm: number): string {
-  return `${Math.round(mm * 10) / 10}mm`;
-}
-
-function formatTempC(c: number): string {
-  return `${Math.round(c * 10) / 10}°C`;
-}
-
 export function ForecastPanel() {
+  const { units } = useUnits();
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [degraded, setDegraded] = useState(false);
@@ -139,14 +134,14 @@ export function ForecastPanel() {
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[14px]">
             <span>
               <strong className="font-semibold">
-                {formatTempC(forecast.weather.current_temp_c)}
+                {formatTemp(forecast.weather.current_temp_c, units)}
               </strong>
             </span>
             <span className="text-muted-foreground">
-              Past 24h: {formatMm(forecast.weather.past24_mm)}
+              Past 24h: {formatPrecip(forecast.weather.past24_mm, units)}
             </span>
             <span className="text-muted-foreground">
-              Next 6h: {formatMm(forecast.weather.next6_mm)}
+              Next 6h: {formatPrecip(forecast.weather.next6_mm, units)}
             </span>
           </div>
         ) : (
@@ -162,7 +157,7 @@ export function ForecastPanel() {
         <h3 className="mb-2 text-[13.5px] font-semibold text-muted-foreground lg:mb-1.5">
           Next 48 hours
         </h3>
-        <PrecipChart hourly={forecast.hourly} />
+        <PrecipChart hourly={forecast.hourly} units={units} />
       </section>
 
       <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card) lg:p-3">

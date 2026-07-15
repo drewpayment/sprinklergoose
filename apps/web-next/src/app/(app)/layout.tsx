@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { UnitsProvider } from "@/components/units-provider";
 import { getSession, isAdmin } from "@/lib/session";
+import { normalizeUnits } from "@/lib/units";
 
 export default async function AppLayout({
   children,
@@ -10,8 +12,10 @@ export default async function AppLayout({
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pt-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:max-w-4xl md:pt-8">
-      <AppHeader admin={isAdmin(session)} userName={session.user.name} />
-      {children}
+      <UnitsProvider initialUnits={normalizeUnits(session.user.units)}>
+        <AppHeader admin={isAdmin(session)} userName={session.user.name} />
+        {children}
+      </UnitsProvider>
     </div>
   );
 }
