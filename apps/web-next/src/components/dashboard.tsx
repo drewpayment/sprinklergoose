@@ -9,8 +9,10 @@
 import { CalendarClock, CloudRain } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { HourlyForecast } from "@/components/hourly-forecast";
 import { QuickRunDialog } from "@/components/quick-run-dialog";
 import { RainDelayChip } from "@/components/rain-delay";
+import { useUnits } from "@/components/units-provider";
 import { ZoneCard } from "@/components/zone-card";
 import {
   remainingForProgramStep,
@@ -21,10 +23,12 @@ import { api } from "@/lib/api-client";
 import { formatClock, formatSeconds } from "@/lib/format";
 import { formatOccurrence } from "@/lib/schedule";
 import { ApiError, type DashboardZone } from "@/lib/types";
+import { formatPrecip } from "@/lib/units";
 
 export function Dashboard({ admin }: { admin: boolean }) {
   const live = useLiveStatus();
   const { status, offline, refresh } = live;
+  const { units } = useUnits();
   const [expandedZone, setExpandedZone] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -183,11 +187,13 @@ export function Dashboard({ admin }: { admin: boolean }) {
                   aria-hidden="true"
                   className="size-4 text-muted-foreground"
                 />
-                24h: {formatMm(status.weather.past24_mm)} · next 6h:{" "}
-                {formatMm(status.weather.next6_mm)}
+                24h: {formatPrecip(status.weather.past24_mm, units)} · next
+                6h: {formatPrecip(status.weather.next6_mm, units)}
               </span>
             )}
           </div>
+
+          <HourlyForecast />
 
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-[13.5px] font-semibold text-muted-foreground">
@@ -203,21 +209,28 @@ export function Dashboard({ admin }: { admin: boolean }) {
           </div>
 
           <main className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {status.zones.map((zone) => (
-              <ZoneCard
-                key={zone.id}
-                zone={zone}
-                remaining={remainingFor(zone)}
-                expanded={expandedZone === zone.id}
-                busy={busy}
-                offline={offline}
-                onToggleExpand={() =>
-                  setExpandedZone((cur) => (cur === zone.id ? null : zone.id))
-                }
-                onStart={(minutes) => void startZone(zone.id, minutes)}
-                onStop={stopAll}
-              />
-            ))}
+            {status.zones.filter((z) => z.enabled).length === 0 && (
+              <p className="text-[13px] text-muted-foreground">
+                All zones are disabled — enable zones in Admin → Zones.
+              </p>
+            )}
+            {status.zones
+              .filter((z) => z.enabled)
+              .map((zone) => (
+                <ZoneCard
+                  key={zone.id}
+                  zone={zone}
+                  remaining={remainingFor(zone)}
+                  expanded={expandedZone === zone.id}
+                  busy={busy}
+                  offline={offline}
+                  onToggleExpand={() =>
+                    setExpandedZone((cur) => (cur === zone.id ? null : zone.id))
+                  }
+                  onStart={(minutes) => void startZone(zone.id, minutes)}
+                  onStop={stopAll}
+                />
+              ))}
           </main>
         </>
       ) : (
@@ -247,9 +260,4 @@ export function Dashboard({ admin }: { admin: boolean }) {
 
 function capitalize(s: string): string {
   return s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s;
-}
-
-/** "9.2mm" with at most one decimal (M3 weather chip). */
-function formatMm(mm: number): string {
-  return `${Math.round(mm * 10) / 10}mm`;
 }
