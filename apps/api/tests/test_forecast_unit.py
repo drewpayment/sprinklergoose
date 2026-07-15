@@ -412,3 +412,53 @@ def test_build_forecast_at_field_reflects_dst_transition():
         "2026-10-31T06:00:00-04:00",
         "2026-11-01T06:00:00-05:00",
     ]
+
+
+# ------------------------------------------------ refresh(): warm snapshot cache
+
+async def test_refresh_populates_snapshot_when_enabled_with_coords():
+    src = FakeWeatherSource(current_temp_c=24.5)
+    g = WeatherGate(src)
+    g.update_settings(make_weather_settings())
+    await g.refresh(T)
+    assert g.snapshot is not None
+    assert g.snapshot.current_temp_c == 24.5
+    assert src.fetches == 1
+
+
+async def test_refresh_noop_when_disabled_or_unconfigured():
+    src = FakeWeatherSource()
+    g = WeatherGate(src)
+    g.update_settings(make_weather_settings(enabled=False))
+    await g.refresh(T)
+    g.update_settings(make_weather_settings(latitude=None, longitude=None))
+    await g.refresh(T)
+    assert g.snapshot is None
+    assert src.fetches == 0
+
+
+async def test_refresh_respects_cache_window():
+    src = FakeWeatherSource()
+    g = WeatherGate(src)
+    g.update_settings(make_weather_settings())
+    await g.refresh(T)
+    await g.refresh(T + timedelta(minutes=29))  # inside CACHE_SECONDS — no fetch
+    assert src.fetches == 1
+    await g.refresh(T + timedelta(minutes=31))  # cache expired — refetch
+    assert src.fetches == 2
+
+
+async def test_refresh_failure_backs_off_and_never_raises():
+    src = FakeWeatherSource()
+    src.fail_fetches = 2
+    g = WeatherGate(src)
+    g.update_settings(make_weather_settings())
+    await g.refresh(T)  # fails (1st fetch), recorded
+    assert g.snapshot is None
+    await g.refresh(T + timedelta(minutes=1))  # inside backoff — no attempt
+    assert src.fetches == 1
+    await g.refresh(T + timedelta(minutes=6))  # backoff over — fails (2nd)
+    assert src.fetches == 2
+    await g.refresh(T + timedelta(minutes=12))  # succeeds (3rd)
+    assert g.snapshot is not None
+    assert src.fetches == 3

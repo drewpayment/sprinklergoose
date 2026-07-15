@@ -480,6 +480,10 @@ class Scheduler:
                 logger.warning(
                     "weather settings unavailable (%s); keeping previous", err
                 )
+            # Keep the forecast snapshot warm between runs so /api/forecast
+            # and status.weather have data (M4.M gap: nothing else fetched
+            # until a run fired). refresh() rate-limits itself, never raises.
+            await self.weather.refresh(now)
         self._last_refresh = now
         self._refresh_needed = False
 

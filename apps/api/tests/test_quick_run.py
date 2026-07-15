@@ -174,7 +174,8 @@ async def test_quick_run_bypasses_rain_delay_and_weather(store, irrigation, cloc
     assert irrigation.start_calls() == [(1, 2)]
     run = store.runs[0]
     assert run["status"] == "running"
-    assert weather_source.fetches == 0  # bypassed entirely, not even fetched
+    # Refresh-cycle warm-up only — the quick run itself bypassed weather.
+    assert weather_source.fetches == 1
     assert not any(r["status"] in ("skipped_rain_delay", "skipped_weather") for r in store.runs)
 
 

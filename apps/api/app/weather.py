@@ -25,6 +25,7 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 FETCH_TIMEOUT_SECONDS = 10.0
 CACHE_SECONDS = 30 * 60  # refresh when older than 30 minutes at evaluation
 STALE_SECONDS = 2 * 60 * 60  # beyond 2h a snapshot is unusable (never skip)
+REFRESH_RETRY_SECONDS = 5 * 60  # failed warm-up fetch retried at most every 5 min
 LOOKBACK_HOURS = 24
 LOOKAHEAD_HOURS = 6
 
@@ -209,6 +210,7 @@ class WeatherGate:
         self._stale_seconds = stale_seconds
         self.settings: WeatherSettings | None = None
         self.snapshot: WeatherSnapshot | None = None
+        self._refresh_failed_at: datetime | None = None
 
     def update_settings(self, settings: WeatherSettings | None) -> None:
         """Adopt the freshest settings row. Any change (updated_at included)
@@ -217,6 +219,40 @@ class WeatherGate:
             if self.settings is not None:
                 self.snapshot = None
             self.settings = settings
+
+    async def refresh(self, now: datetime) -> None:
+        """Keep the snapshot warm while weather is enabled. GET /api/forecast
+        and status.weather only read the cache, and before this method the
+        only writer was evaluate() at run fire time — so between runs every
+        weather surface sat empty. Called from the scheduler's refresh cycle;
+        reuses the evaluate() cache window, backs off REFRESH_RETRY_SECONDS
+        after a failed fetch, and never raises. Skip decisions are untouched:
+        evaluate() keeps its own fetch path and now usually hits this cache."""
+        settings = self.settings
+        if settings is None or not settings.enabled:
+            return
+        if settings.latitude is None or settings.longitude is None:
+            return
+        snapshot = self.snapshot
+        if (
+            snapshot is not None
+            and (now - snapshot.fetched_at).total_seconds() < self._cache_seconds
+        ):
+            return
+        if (
+            self._refresh_failed_at is not None
+            and (now - self._refresh_failed_at).total_seconds()
+            < REFRESH_RETRY_SECONDS
+        ):
+            return
+        try:
+            self.snapshot = await self._source.fetch(
+                settings.latitude, settings.longitude, now
+            )
+            self._refresh_failed_at = None
+        except Exception as err:
+            self._refresh_failed_at = now
+            logger.warning("weather refresh failed (%s); retrying later", err)
 
     async def evaluate(self, now: datetime) -> WeatherDecision:
         settings = self.settings
