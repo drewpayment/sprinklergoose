@@ -1,63 +1,113 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap");
 
 /*
- * Sprinkler theme — ported from the v1 app (apps/web/src/styles.css).
- * Calm teal accent, mobile-first, light + dark via prefers-color-scheme.
+ * Modernist theme (design_handoff_sprinklergoose_modernist).
+ * Flat, architectural, near-mono red-on-off-white. Archivo everywhere,
+ * zero corner radius, 2px section rules / 1px row rules. Light + dark.
+ *
+ * Every surface reads its color from these variables, so flipping the theme
+ * is a variable swap — no per-component dark styles. Dark is applied via the
+ * `.dark` class (next-themes) with a prefers-color-scheme fallback for no-JS.
  */
 
 :root {
   color-scheme: light dark;
-  --background: #f2f6f7;
-  --foreground: #10272e;
-  --card: #ffffff;
-  --card-foreground: #10272e;
-  --popover: #ffffff;
-  --popover-foreground: #10272e;
-  --primary: #0e7490;
-  --primary-foreground: #ffffff;
-  --secondary: #e0f2f7;
-  --secondary-foreground: #0c5c73;
-  --muted: #e7eef0;
-  --muted-foreground: #5c7681;
-  --accent: #e0f2f7;
-  --accent-foreground: #0c5c73;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
-  --border: #dbe6ea;
-  --input: #dbe6ea;
-  --ring: #0e7490;
-  --radius: 0.75rem;
-  --warn-bg: #fef3e2;
-  --warn-border: #f5c98a;
-  --warn-text: #8a4b08;
-  --shadow-card: 0 1px 3px rgba(16, 39, 46, 0.08);
+
+  /* — Modernist source tokens (canonical: modernist-tokens.css) — */
+  --color-bg: #f3f2f2; /* ground / page */
+  --color-surface: #eae9e9; /* cards, inputs, tinted cells */
+  --color-ink: #201e1d; /* text */
+  --color-accent: #ec3013; /* primary action, live/running, marks */
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-muted-ink: color-mix(in srgb, #201e1d 55%, transparent);
+
+  /* Accent ramp — tint fill (-100), hover (-600), text-on-tint / body (-700/-800). */
+  --color-accent-100: #fff2ef;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+
+  /* Neutral ramp — status pills, disabled marks. */
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-800: #444141;
+
+  /* — shadcn variable names, mapped onto the Modernist palette — */
+  --background: var(--color-bg);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-bg);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-bg);
+  --secondary: var(--color-accent-100); /* red tint fill */
+  --secondary-foreground: var(--color-accent-800);
+  --muted: var(--color-surface);
+  --muted-foreground: var(--color-muted-ink);
+  --accent: var(--color-accent-100);
+  --accent-foreground: var(--color-accent-800);
+  --destructive: var(--color-accent); /* mono: red is emphasis, not a separate destructive */
+  --destructive-foreground: var(--color-bg);
+  --border: var(--color-divider);
+  --input: var(--color-divider);
+  --ring: var(--color-accent);
+  --radius: 0rem;
+
+  /* Warn / offline — mono ruled treatment (no separate amber palette). */
+  --warn-bg: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  --warn-border: var(--color-divider);
+  --warn-text: var(--color-ink);
+
+  /* Elevation — used only to lift phone/browser frames; in-app surfaces use rules. */
+  --shadow-card: 0 1px 2px rgba(45, 43, 43, 0.14);
+}
+
+/* Dark — designed for this app; DS ships light-only. Warm near-black ground,
+   off-white ink, red brightened so it still carries watering + attention. */
+.dark {
+  --color-bg: #1a1817;
+  --color-surface: #262322;
+  --color-ink: #f4f2f0;
+  --color-accent: #ff5a40;
+  --color-divider: color-mix(in srgb, #f4f2f0 24%, transparent);
+  --color-muted-ink: color-mix(in srgb, #f4f2f0 55%, transparent);
+
+  --color-accent-100: #39201a;
+  --color-accent-600: #ff7a63;
+  --color-accent-700: #ff8f7c;
+  --color-accent-800: #ffcabf;
+
+  --color-neutral-100: #262322;
+  --color-neutral-800: #d7d3d3;
+
+  --primary-foreground: #1a1817;
+  --destructive-foreground: #1a1817;
+
+  --shadow-card: 0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0c1519;
-    --foreground: #e6f0f3;
-    --card: #14232a;
-    --card-foreground: #e6f0f3;
-    --popover: #14232a;
-    --popover-foreground: #e6f0f3;
-    --primary: #2bb3d4;
-    --primary-foreground: #06181e;
-    --secondary: #103642;
-    --secondary-foreground: #7fdcef;
-    --muted: #1a2b33;
-    --muted-foreground: #8aa5af;
-    --accent: #103642;
-    --accent-foreground: #7fdcef;
-    --destructive: #e05252;
-    --destructive-foreground: #ffffff;
-    --border: #23363f;
-    --input: #23363f;
-    --ring: #2bb3d4;
-    --warn-bg: #3a2410;
-    --warn-border: #7c5220;
-    --warn-text: #f5c98a;
-    --shadow-card: none;
+  :root:not(.light):not(.dark) {
+    --color-bg: #1a1817;
+    --color-surface: #262322;
+    --color-ink: #f4f2f0;
+    --color-accent: #ff5a40;
+    --color-divider: color-mix(in srgb, #f4f2f0 24%, transparent);
+    --color-muted-ink: color-mix(in srgb, #f4f2f0 55%, transparent);
+
+    --color-accent-100: #39201a;
+    --color-accent-600: #ff7a63;
+    --color-accent-700: #ff8f7c;
+    --color-accent-800: #ffcabf;
+
+    --color-neutral-100: #262322;
+    --color-neutral-800: #d7d3d3;
+
+    --primary-foreground: #1a1817;
+    --destructive-foreground: #1a1817;
+
+    --shadow-card: 0 3px 12px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -84,60 +134,110 @@
   --color-warn-bg: var(--warn-bg);
   --color-warn-border: var(--warn-border);
   --color-warn-text: var(--warn-text);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Modernist ramp exposed as utilities (bg-accent-100, text-accent-700, …). */
+  --color-divider: var(--color-divider);
+  --color-accent-100: var(--color-accent-100);
+  --color-accent-600: var(--color-accent-600);
+  --color-accent-700: var(--color-accent-700);
+  --color-accent-800: var(--color-accent-800);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-800: var(--color-neutral-800);
+
+  /* Radius: 0 everywhere (rounded-full stays a pill — it's not a --radius var). */
+  --radius-xs: 0rem;
+  --radius-sm: 0rem;
+  --radius-md: 0rem;
+  --radius-lg: 0rem;
+  --radius-xl: 0rem;
+  --radius-2xl: 0rem;
+  --radius-3xl: 0rem;
+  --radius-4xl: 0rem;
+
+  --font-sans: "Archivo", system-ui, -apple-system, sans-serif;
+  --font-heading: "Archivo", system-ui, -apple-system, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-size-adjust: 100%;
+}
+
+/* Headings: Archivo 800, tight leading, slight negative tracking. */
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
 }
 
 button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Bare `border` utilities resolve to the Modernist divider (Tailwind v4 otherwise
+   defaults border-color to currentColor). Explicit border-* utilities still win. */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-divider);
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+/* Small uppercase section label — the Modernist h6 (kicker). */
+.kicker {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* — running pulse (dot + map halo). Opacity-only, per the mock's sg-pulse. — */
 @keyframes pulse-dot {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.35;
-    transform: scale(0.75);
+    opacity: 0.4;
   }
 }
 
 .pulse-dot {
-  animation: pulse-dot 1.6s ease-in-out infinite;
+  animation: pulse-dot 1.7s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
   .animate-spin {
-    animation-duration: 3s;
+    animation-duration: 3.4s;
   }
 }
 
 /*
- * M4.M zone map (docs/M4-MAP-SPEC.md) — Leaflet pins, running-zone pulse
- * animation, and the hand-rolled polygon-drawing preview markers.
+ * M4.M zone map (docs/M4-MAP-SPEC.md) — restyled to the Modernist palette:
+ * red/ink, zero radius, tabular countdown tooltips.
  */
 
 .leaflet-container {
-  background: var(--muted);
+  background: var(--color-surface);
   font-family: var(--font-sans);
 }
 
 /* Pin markers (zone-icon.ts createZoneIcon) — plain wrapper, no default
-   Leaflet div-icon chrome (white box) since we draw our own SVG pin. */
+   Leaflet div-icon chrome since we draw our own SVG pin. */
 .zone-pin-wrapper {
   position: relative;
   background: transparent;
@@ -156,7 +256,6 @@ button {
   height: 26px;
   margin-left: -13px;
   margin-top: -13px;
-  border-radius: 50%;
   animation: zone-pin-pulse 1.7s ease-out infinite;
 }
 
@@ -172,8 +271,7 @@ button {
   }
 }
 
-/* Polygon running-zone pulse — targets the SVG <path> Leaflet renders for
-   vector layers (pathOptions.className). */
+/* Polygon running-zone pulse — targets the SVG <path> Leaflet renders. */
 .zone-polygon-pulse {
   animation: zone-polygon-pulse 1.7s ease-in-out infinite;
 }
@@ -191,36 +289,37 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .zone-pin-halo,
   .zone-polygon-pulse {
-    animation-duration: 3.5s;
+    animation-duration: 3.4s;
   }
 }
 
 .zone-running-tooltip {
-  border-radius: 999px !important;
-  background: var(--primary) !important;
+  border-radius: 0 !important;
+  background: var(--color-accent) !important;
   color: var(--primary-foreground) !important;
   border: none !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
-  font-weight: 600;
+  font-weight: 800;
   font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
   padding: 3px 10px !important;
 }
 .zone-running-tooltip::before {
-  border-top-color: var(--primary) !important;
+  border-top-color: var(--color-accent) !important;
 }
 
 .zone-name-tooltip {
-  border-radius: 999px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--card) !important;
-  color: var(--card-foreground) !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--color-divider) !important;
+  background: var(--color-surface) !important;
+  color: var(--color-ink) !important;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 2px 8px !important;
   box-shadow: var(--shadow-card);
 }
 .zone-name-tooltip::before {
-  border-top-color: var(--card) !important;
+  border-top-color: var(--color-surface) !important;
 }
 
 /* Draft polygon vertex markers while an admin is drawing (edit mode). */
@@ -232,16 +331,14 @@ button {
   display: block;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid white;
+  background: var(--color-accent);
+  border: 2px solid var(--color-bg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 /*
- * Wayfinding (docs/M4-MAP-SPEC.md addendum) — home anchor marker and
- * locate-me "you are here" dot. Deliberately not the teardrop zone-pin
- * shape (zone-icon.ts createHomeIcon / createLocateDotIcon).
+ * Wayfinding (docs/M4-MAP-SPEC.md addendum) — home anchor + locate-me dot.
+ * Squared to the Modernist system; home = ink, locate = accent.
  */
 
 .home-pin-wrapper {
@@ -254,9 +351,8 @@ button {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  background: #1e293b;
-  border: 2.5px solid white;
+  background: var(--color-ink);
+  border: 2.5px solid var(--color-bg);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
@@ -273,8 +369,8 @@ button {
   margin-left: -7px;
   margin-top: -7px;
   border-radius: 50%;
-  background: #2563eb;
-  border: 2.5px solid white;
+  background: var(--color-accent);
+  border: 2.5px solid var(--color-bg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 .locate-dot-halo {
@@ -286,13 +382,13 @@ button {
   margin-left: -7px;
   margin-top: -7px;
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--color-accent);
   opacity: 0.5;
   animation: zone-pin-pulse 1.7s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .locate-dot-halo {
-    animation-duration: 3.5s;
+    animation-duration: 3.4s;
   }
 }

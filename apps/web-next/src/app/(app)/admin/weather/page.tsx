@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { PageHeading } from "@/components/page-heading";
 import { WeatherSettings } from "@/components/weather-settings";
 import { db } from "@/db";
 import { weatherSettings } from "@/db/schema";
@@ -25,12 +26,11 @@ export default async function AdminWeatherPage() {
 
   return (
     <main>
-      <h2 className="mb-1 text-lg font-semibold">Weather</h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Let the schedule skip watering when the weather already did the job.
-        Skipped runs appear in History with a &ldquo;Water anyway&rdquo;
-        override.
-      </p>
+      <PageHeading
+        title="Weather"
+        description="Let the schedule skip watering when the weather already did the job. Skipped runs appear in History with a “Water anyway” override."
+        back={{ href: "/more", label: "More" }}
+      />
       <WeatherSettings
         initialSettings={{
           enabled: row.enabled,

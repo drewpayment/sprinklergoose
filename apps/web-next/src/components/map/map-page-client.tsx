@@ -8,8 +8,9 @@
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { useSharedLiveStatus } from "@/components/live-status-provider";
 import { Button } from "@/components/ui/button";
-import { getRunningZone, useLiveStatus } from "@/hooks/use-live-status";
+import { getRunningZone } from "@/hooks/use-live-status";
 import { api } from "@/lib/api-client";
 import { ApiError, type ZoneGeometry, type ZoneMapView } from "@/lib/types";
 import { ForecastPanel } from "./forecast-panel";
@@ -48,7 +49,7 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
   const [draftPolygon, setDraftPolygon] = useState<LatLngTuple[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const live = useLiveStatus();
+  const live = useSharedLiveStatus();
   const running = getRunningZone(live);
 
   const resetDrafts = () => {

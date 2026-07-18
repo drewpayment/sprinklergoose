@@ -5,19 +5,18 @@ import { Switch as SwitchPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+// Modernist toggle: square (0 radius), 44×26 track, 18×18 knob.
+// ON  = red border + red fill, knob right, knob is the ground color.
+// OFF = divider border, surface fill, knob left, knob is ink@40%.
 function Switch({
   className,
-  size = "default",
   ...props
-}: React.ComponentProps<typeof SwitchPrimitive.Root> & {
-  size?: "sm" | "default"
-}) {
+}: React.ComponentProps<typeof SwitchPrimitive.Root>) {
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
-      data-size={size}
       className={cn(
-        "peer group/switch inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-[1.15rem] data-[size=default]:w-8 data-[size=sm]:h-3.5 data-[size=sm]:w-6 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-input/80",
+        "peer group/switch inline-flex h-[26px] w-11 shrink-0 items-center rounded-none border-2 p-0.5 outline-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=unchecked]:border-border data-[state=unchecked]:bg-[var(--color-surface)]",
         className
       )}
       {...props}
@@ -25,7 +24,7 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0 dark:data-[state=checked]:bg-primary-foreground dark:data-[state=unchecked]:bg-foreground"
+          "pointer-events-none block size-[18px] rounded-none ring-0 transition-transform data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-[var(--color-bg)] data-[state=unchecked]:translate-x-0 data-[state=unchecked]:bg-[color-mix(in_srgb,var(--color-ink)_40%,transparent)]"
         )}
       />
     </SwitchPrimitive.Root>

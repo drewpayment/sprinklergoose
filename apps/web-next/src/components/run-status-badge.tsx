@@ -1,58 +1,30 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
 import type { RunStatus, StepOutcome } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { VariantProps } from "class-variance-authority";
 
-// Distinct, theme-aware badge per run status (M2.S5). Colors picked to stay
-// calm in both light and dark, matching the M1 look.
-const RUN_STYLES: Record<RunStatus, { label: string; className: string }> = {
-  running: {
-    label: "Running",
-    className: "bg-secondary text-secondary-foreground",
-  },
-  completed: {
-    label: "Completed",
-    className:
-      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  },
-  partial: {
-    label: "Partial",
-    className:
-      "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  },
-  failed: {
-    label: "Failed",
-    className: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  },
-  cancelled: {
-    label: "Cancelled",
-    className: "border-border bg-transparent text-muted-foreground",
-  },
-  skipped_rain_delay: {
-    label: "Rain delay",
-    className: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
-  },
-  skipped_weather: {
-    label: "Weather skip",
-    className:
-      "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
-  },
-  missed: {
-    label: "Missed",
-    className: "bg-warn-bg text-warn-text border-warn-border",
-  },
+type Variant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+
+// Modernist mono mapping: red-tint (accent) for what's live or failed,
+// 1px-red outline for weather/rain-delay skips, grey (neutral) for the rest.
+const RUN_STYLES: Record<RunStatus, { label: string; variant: Variant }> = {
+  running: { label: "Running", variant: "default" },
+  completed: { label: "Completed", variant: "secondary" },
+  partial: { label: "Partial", variant: "outline" },
+  failed: { label: "Failed", variant: "default" },
+  cancelled: { label: "Cancelled", variant: "secondary" },
+  skipped_rain_delay: { label: "Rain delay", variant: "outline" },
+  skipped_weather: { label: "Skipped — weather", variant: "outline" },
+  missed: { label: "Missed", variant: "secondary" },
 };
 
 export function RunStatusBadge({ status }: { status: RunStatus }) {
-  const style = RUN_STYLES[status] ?? {
-    label: status,
-    className: "border-border bg-transparent text-muted-foreground",
-  };
+  const style = RUN_STYLES[status] ?? { label: status, variant: "secondary" };
   return (
-    <Badge className={cn("border border-transparent", style.className)}>
+    <Badge variant={style.variant}>
       {status === "running" && (
         <span
           aria-hidden="true"
-          className="pulse-dot h-1.5 w-1.5 rounded-full bg-current"
+          className="pulse-dot size-1.5 rounded-full bg-current"
         />
       )}
       {style.label}
@@ -60,39 +32,18 @@ export function RunStatusBadge({ status }: { status: RunStatus }) {
   );
 }
 
-const OUTCOME_STYLES: Record<StepOutcome, { label: string; className: string }> =
+const OUTCOME_STYLES: Record<StepOutcome, { label: string; variant: Variant }> =
   {
-    completed: {
-      label: "Completed",
-      className:
-        "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-    },
-    cancelled: {
-      label: "Cancelled",
-      className: "border-border bg-transparent text-muted-foreground",
-    },
-    failed: {
-      label: "Failed",
-      className: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-    },
-    skipped_disabled: {
-      label: "Skipped (disabled)",
-      className: "bg-warn-bg text-warn-text border-warn-border",
-    },
+    completed: { label: "Completed", variant: "secondary" },
+    cancelled: { label: "Cancelled", variant: "secondary" },
+    failed: { label: "Failed", variant: "default" },
+    skipped_disabled: { label: "Skipped (disabled)", variant: "outline" },
   };
 
 export function StepOutcomeBadge({ outcome }: { outcome: StepOutcome | null }) {
   if (!outcome) {
-    return (
-      <Badge className="border border-border bg-transparent text-muted-foreground">
-        —
-      </Badge>
-    );
+    return <Badge variant="secondary">—</Badge>;
   }
   const style = OUTCOME_STYLES[outcome];
-  return (
-    <Badge className={cn("border border-transparent", style.className)}>
-      {style.label}
-    </Badge>
-  );
+  return <Badge variant={style.variant}>{style.label}</Badge>;
 }

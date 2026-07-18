@@ -4,6 +4,7 @@ import { CalendarPlus, Pencil, Play, Trash2, TriangleAlert } from "lucide-react"
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PageHeading } from "@/components/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -70,24 +71,24 @@ export function SchedulesManager({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Schedules</h2>
-          <p className="text-sm text-muted-foreground">
-            {admin
-              ? "Watering programs run automatically — the controller's own timers are never used."
-              : "Watering programs set up by the admin. You can run one now."}
-          </p>
-        </div>
-        {admin && (
-          <Button asChild className="min-h-11 rounded-xl px-4 font-semibold">
-            <Link href="/schedules/new">
-              <CalendarPlus data-slot="icon" />
-              New schedule
-            </Link>
-          </Button>
-        )}
-      </div>
+      <PageHeading
+        title="Schedules"
+        description={
+          admin
+            ? "Watering programs run automatically — the controller's own timers are never used."
+            : "Watering programs set up by the admin. You can run one now."
+        }
+        action={
+          admin && (
+            <Button asChild className="min-h-11 px-4">
+              <Link href="/schedules/new">
+                <CalendarPlus data-slot="icon" />
+                New
+              </Link>
+            </Button>
+          )
+        }
+      />
 
       {programs.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card px-6 py-12 text-center text-muted-foreground shadow-(--shadow-card)">

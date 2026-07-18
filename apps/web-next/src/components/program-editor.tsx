@@ -15,6 +15,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,9 +57,9 @@ interface Errors {
 let keySeq = 0;
 const nextKey = () => ++keySeq;
 
-const inputClass = "min-h-11 rounded-xl text-[15px]";
+const inputClass = "min-h-11 text-[15px]";
 const selectClass =
-  "min-h-11 w-full appearance-none rounded-xl border border-input bg-transparent py-1 pr-9 pl-3 text-[15px] shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-11 w-full appearance-none border border-input bg-[var(--color-surface)] py-1 pr-9 pl-3 text-[15px] outline-none focus-visible:border-primary";
 
 export function ProgramEditor({
   zones,
@@ -228,14 +229,11 @@ export function ProgramEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-lg font-semibold">
-          {editing ? `Edit ${program.name}` : "New schedule"}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Times are local wall-clock times.
-        </p>
-      </div>
+      <PageHeading
+        title={editing ? `Edit · ${program.name}` : "New schedule"}
+        description="Times are local wall-clock times."
+        back={{ href: "/schedules", label: "Schedules" }}
+      />
 
       {/* Name + day rule */}
       <section className="rounded-2xl border bg-card p-4 shadow-(--shadow-card)">
@@ -253,18 +251,18 @@ export function ProgramEditor({
         />
         {fieldError(errors.name)}
 
-        <p className="mt-4 mb-2 text-sm font-medium">Runs on</p>
+        <p className="kicker mt-4 mb-2">Runs on</p>
         <div
           role="radiogroup"
           aria-label="Day rule"
-          className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1"
+          className="grid grid-cols-2 border border-border"
         >
           {(
             [
               ["days_of_week", "Days of week"],
               ["interval", "Every N days"],
             ] as const
-          ).map(([value, label]) => (
+          ).map(([value, label], i) => (
             <button
               key={value}
               type="button"
@@ -272,10 +270,11 @@ export function ProgramEditor({
               aria-checked={dayType === value}
               onClick={() => setDayType(value)}
               className={cn(
-                "min-h-10 rounded-lg text-sm font-medium transition-colors",
+                "min-h-10 text-sm font-semibold transition-colors",
+                i > 0 && "border-l border-border",
                 dayType === value
-                  ? "bg-card text-foreground shadow-(--shadow-card)"
-                  : "text-muted-foreground",
+                  ? "bg-primary text-primary-foreground"
+                  : "text-foreground hover:bg-foreground/[0.07]",
               )}
             >
               {label}
@@ -285,7 +284,7 @@ export function ProgramEditor({
 
         {dayType === "days_of_week" ? (
           <>
-            <div className="mt-3 grid grid-cols-7 gap-1.5">
+            <div className="mt-3 grid grid-cols-7 border border-border">
               {DAY_LABELS.map((label, day) => {
                 const selected = days.has(day);
                 return (
@@ -302,10 +301,10 @@ export function ProgramEditor({
                       })
                     }
                     className={cn(
-                      "min-h-11 rounded-xl border text-[13px] font-semibold transition-colors sm:text-sm",
+                      "min-h-11 text-[13px] font-extrabold transition-colors [&:not(:first-child)]:border-l [&:not(:first-child)]:border-border sm:text-sm",
                       selected
-                        ? "border-primary bg-secondary text-secondary-foreground ring-1 ring-primary"
-                        : "bg-background text-muted-foreground",
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-foreground/[0.07]",
                     )}
                   >
                     {label}
@@ -438,10 +437,11 @@ export function ProgramEditor({
                 <div className="flex items-center gap-2">
                   <span
                     aria-hidden="true"
-                    className="flex size-7 flex-none items-center justify-center rounded-full bg-secondary text-[13px] font-bold text-secondary-foreground tabular-nums"
+                    className="flex size-7 flex-none items-center justify-center bg-primary text-[13px] font-extrabold text-primary-foreground tabular-nums"
                   >
                     {i + 1}
                   </span>
+
                   <div className="relative min-w-0 flex-1">
                     <select
                       value={step.zoneId ?? ""}

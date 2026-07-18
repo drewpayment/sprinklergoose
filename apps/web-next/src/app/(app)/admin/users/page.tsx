@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { PageHeading } from "@/components/page-heading";
 import { UsersManager } from "@/components/users-manager";
 import { auth } from "@/lib/auth";
 import { getSession, isAdmin } from "@/lib/session";
@@ -20,11 +21,11 @@ export default async function AdminUsersPage() {
 
   return (
     <main>
-      <h2 className="mb-1 text-lg font-semibold">Users</h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Household accounts. Members can water enabled zones; admins can also
-        manage zones, users and the rain delay.
-      </p>
+      <PageHeading
+        title="Users"
+        description="You create every account — public sign-up is off. Members can run zones; admins configure."
+        back={{ href: "/more", label: "More" }}
+      />
       <UsersManager
         currentUserId={session.user.id}
         users={users.map((u) => ({
