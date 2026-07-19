@@ -125,8 +125,7 @@ export function Dashboard({
 
   const zones = status?.zones ?? [];
   const enabledZones = zones.filter((z) => z.enabled);
-  const disabledZones = zones.filter((z) => !z.enabled);
-  const planZones = zones.map((z) => ({
+  const planZones = enabledZones.map((z) => ({
     id: z.id,
     name: z.name,
     enabled: z.enabled,
@@ -348,27 +347,6 @@ export function Dashboard({
                       onStart={(m) => void startZone(zone.id, m)}
                       onStop={stopAll}
                     />
-                  ))}
-                  {disabledZones.map((zone) => (
-                    <div
-                      key={zone.id}
-                      className="flex items-center gap-3 border-t border-border py-3.5 opacity-50 last:border-b"
-                    >
-                      <span className="w-[22px] text-center text-[13px] font-extrabold">
-                        {zone.id}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[15px] leading-tight font-bold">
-                          {zone.name}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          Disabled
-                        </div>
-                      </div>
-                      <span className="bg-[var(--color-neutral-100)] px-2.5 py-[3px] text-[11px] font-semibold text-[var(--color-neutral-800)]">
-                        OFF
-                      </span>
-                    </div>
                   ))}
                 </div>
 
