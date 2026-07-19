@@ -2,6 +2,7 @@ import { asc } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { HistoryList } from "@/components/history-list";
+import { PageHeading } from "@/components/page-heading";
 import { db } from "@/db";
 import { programs } from "@/db/schema";
 import { getSession } from "@/lib/session";
@@ -23,10 +24,10 @@ export default async function HistoryPage() {
 
   return (
     <main>
-      <h2 className="mb-1 text-lg font-semibold">History</h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Every program run — scheduled, run now, skipped, or missed.
-      </p>
+      <PageHeading
+        title="History"
+        description="Every program run — scheduled, run-now, skipped, or missed."
+      />
       <HistoryList programOptions={programOptions} />
     </main>
   );

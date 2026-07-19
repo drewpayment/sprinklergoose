@@ -1,8 +1,8 @@
 "use client";
 
+import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -16,12 +16,19 @@ interface ZoneRow {
   enabled: boolean;
 }
 
+// Modernist Zones admin (3a): a continuous ruled list. Each row is a square
+// number badge (red when enabled, outlined when off), the name, a pencil that
+// swaps in a rename field with Save/Cancel, and the square enable toggle.
 export function ZonesManager({ initialZones }: { initialZones: ZoneRow[] }) {
   const [rows, setRows] = useState(initialZones);
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const mutate = async (id: number, patch: { name?: string; enabled?: boolean }) => {
+  const mutate = async (
+    id: number,
+    patch: { name?: string; enabled?: boolean },
+  ) => {
     setBusyId(id);
     try {
       await api.updateZone(id, patch);
@@ -35,98 +42,129 @@ export function ZonesManager({ initialZones }: { initialZones: ZoneRow[] }) {
     }
   };
 
-  const submitName = async (row: ZoneRow) => {
-    const draft = drafts[row.id];
-    if (draft === undefined) return;
+  const startEdit = (row: ZoneRow) => {
+    setEditingId(row.id);
+    setDraft(row.name);
+  };
+
+  const saveName = async (row: ZoneRow) => {
     const name = draft.trim();
-    setDrafts((d) => {
-      const next = { ...d };
-      delete next[row.id];
-      return next;
-    });
-    if (!name || name === row.name || name.length > 40) return;
-    if (await mutate(row.id, { name })) toast.success(`Zone ${row.id} renamed`);
+    if (!name || name === row.name || name.length > 40) {
+      setEditingId(null);
+      return;
+    }
+    if (await mutate(row.id, { name })) {
+      toast.success(`Zone ${row.id} renamed`);
+      setEditingId(null);
+    }
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      {rows.map((row) => (
-        <section
-          key={row.id}
-          className={cn(
-            "rounded-2xl border bg-card p-4 shadow-(--shadow-card)",
-            !row.enabled && "opacity-70",
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={drafts[row.id] ?? row.name}
-                  maxLength={40}
-                  aria-label={`Name for zone ${row.id}`}
-                  disabled={busyId === row.id}
-                  onChange={(e) =>
-                    setDrafts((d) => ({ ...d, [row.id]: e.target.value }))
-                  }
-                  onBlur={() => void submitName(row)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                    if (e.key === "Escape") {
-                      setDrafts((d) => {
-                        const next = { ...d };
-                        delete next[row.id];
-                        return next;
-                      });
-                    }
-                  }}
-                  className="h-11 max-w-60 rounded-xl text-[15px] font-semibold"
-                />
-                {drafts[row.id] !== undefined &&
-                  drafts[row.id].trim() !== row.name && (
-                    <Button
-                      size="sm"
-                      disabled={busyId === row.id || !drafts[row.id].trim()}
-                      onClick={() => void submitName(row)}
-                      className="h-9 rounded-lg"
-                    >
-                      Save
-                    </Button>
+    <div>
+      <div className="border-2 border-border">
+        {rows.map((row) => {
+          const editing = editingId === row.id;
+          return (
+            <div
+              key={row.id}
+              className={cn(
+                "border-t border-border px-4 py-3.5 first:border-t-0",
+                !row.enabled && "opacity-[0.62]",
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "flex size-6 flex-none items-center justify-center text-[12px] font-extrabold",
+                    row.enabled
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border text-muted-foreground",
                   )}
+                >
+                  {row.id}
+                </span>
+
+                {editing ? (
+                  <Input
+                    autoFocus
+                    value={draft}
+                    maxLength={40}
+                    aria-label={`Name for zone ${row.id}`}
+                    disabled={busyId === row.id}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveName(row);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="min-h-11 flex-1 font-semibold"
+                  />
+                ) : (
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15.5px] leading-tight font-extrabold">
+                      {row.name}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Zone {row.id}
+                      {!row.enabled && " · hidden from members"}
+                    </div>
+                  </div>
+                )}
+
+                {!editing && (
+                  <button
+                    type="button"
+                    onClick={() => startEdit(row)}
+                    aria-label={`Rename zone ${row.id}`}
+                    className="flex-none text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="size-[17px]" strokeWidth={1.8} />
+                  </button>
+                )}
+
+                <Switch
+                  checked={row.enabled}
+                  disabled={busyId === row.id || editing}
+                  aria-label={`Zone ${row.id} enabled`}
+                  onCheckedChange={(enabled) => {
+                    void mutate(row.id, { enabled }).then((ok) => {
+                      if (ok) {
+                        toast.success(
+                          `Zone ${row.id} ${enabled ? "enabled" : "disabled"}`,
+                        );
+                      }
+                    });
+                  }}
+                />
               </div>
-              <span className="mt-1 block text-[12.5px] text-muted-foreground">
-                Zone {row.id}
-                {!row.enabled && " · hidden from members"}
-              </span>
-            </div>
-            <div className="flex flex-col items-end gap-1.5">
-              <Switch
-                checked={row.enabled}
-                disabled={busyId === row.id}
-                aria-label={`Zone ${row.id} enabled`}
-                onCheckedChange={(enabled) => {
-                  void mutate(row.id, { enabled }).then((ok) => {
-                    if (ok) {
-                      toast.success(
-                        `Zone ${row.id} ${enabled ? "enabled" : "disabled"}`,
-                      );
-                    }
-                  });
-                }}
-              />
-              {!row.enabled && (
-                <Badge variant="outline" className="text-muted-foreground">
-                  Disabled
-                </Badge>
+
+              {editing && (
+                <div className="mt-2.5 flex gap-2 pl-9">
+                  <Button
+                    disabled={busyId === row.id || !draft.trim()}
+                    onClick={() => void saveName(row)}
+                    className="min-h-10"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busyId === row.id}
+                    onClick={() => setEditingId(null)}
+                    className="min-h-10"
+                  >
+                    Cancel
+                  </Button>
+                </div>
               )}
             </div>
-          </div>
-        </section>
-      ))}
-      <p className="mt-1 text-[13px] text-muted-foreground">
-        Zones 6–7 have no valves wired on this controller (unwired expansion
-        slots). Leave them disabled unless hardware is added — disabled zones
-        are hidden from members and the executor refuses to start them.
+          );
+        })}
+      </div>
+
+      <p className="mt-4 text-[13px] text-muted-foreground">
+        Unwired expansion slots have no valve on this controller. Leave them
+        disabled unless hardware is added — disabled zones are hidden from
+        members and the executor refuses to start them.
       </p>
     </div>
   );

@@ -428,7 +428,7 @@ export function WeatherSettings({
       <Button
         disabled={saving}
         onClick={() => void save()}
-        className="min-h-12 rounded-xl text-[16px] font-bold"
+        className="min-h-[50px] w-full justify-start text-[15px]"
       >
         {saving ? "Saving…" : "Save weather settings"}
       </Button>

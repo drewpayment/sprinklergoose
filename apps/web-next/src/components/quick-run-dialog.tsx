@@ -30,9 +30,11 @@ interface Props {
   zones: { id: number; name: string }[];
   disabled: boolean;
   onSubmitted: () => void;
+  /** Optional custom trigger (defaults to a "Quick run ›" ghost link). */
+  trigger?: React.ReactNode;
 }
 
-export function QuickRunDialog({ zones, disabled, onSubmitted }: Props) {
+export function QuickRunDialog({ zones, disabled, onSubmitted, trigger }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES);
@@ -102,13 +104,15 @@ export function QuickRunDialog({ zones, disabled, onSubmitted }: Props) {
       }}
     >
       <DialogTrigger asChild>
-        <Button
-          variant="secondary"
-          disabled={disabled || zones.length === 0}
-          className="min-h-10 rounded-xl text-[14px] font-semibold"
-        >
-          Quick run
-        </Button>
+        {trigger ?? (
+          <button
+            type="button"
+            disabled={disabled || zones.length === 0}
+            className="text-xs font-extrabold text-primary disabled:opacity-50"
+          >
+            Quick run ›
+          </button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-sm">
         <DialogHeader>
@@ -132,11 +136,11 @@ export function QuickRunDialog({ zones, disabled, onSubmitted }: Props) {
           </span>
         </div>
 
-        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-xl border p-2">
+        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto border-2 border-border p-2">
           {zones.map((z) => (
             <Label
               key={z.id}
-              className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-accent"
+              className="flex min-h-10 cursor-pointer items-center gap-2.5 px-2 py-1.5 hover:bg-accent"
             >
               <Checkbox
                 checked={selected.has(z.id)}
@@ -164,7 +168,7 @@ export function QuickRunDialog({ zones, disabled, onSubmitted }: Props) {
             onChange={(e) =>
               setMinutes(e.target.value.replace(/\D/g, "").slice(0, 3))
             }
-            className="h-11 max-w-32 rounded-xl tabular-nums"
+            className="h-11 max-w-32 tabular-nums"
           />
         </div>
 
