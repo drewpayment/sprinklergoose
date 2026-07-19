@@ -10,8 +10,10 @@ export default function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
   const isSignIn = pathname === "/sign-in";
+  // `/` is public: it serves the marketing page when signed out.
+  const isPublic = isSignIn || pathname === "/";
 
-  if (!sessionCookie && !isSignIn) {
+  if (!sessionCookie && !isPublic) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
   if (sessionCookie && isSignIn) {
@@ -23,6 +25,6 @@ export default function proxy(request: NextRequest) {
 export const config = {
   // Pages only: API routes return their own 401s; static assets excluded.
   matcher: [
-    "/((?!api|_next/static|_next/image|icons|manifest.webmanifest|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|icons|marketing|manifest.webmanifest|favicon.ico).*)",
   ],
 };

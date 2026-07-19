@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { LiveStatusProvider } from "@/components/live-status-provider";
@@ -10,7 +9,9 @@ export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getSession();
-  if (!session) redirect("/sign-in");
+  // Signed out: render bare — `/` serves the public marketing page, and
+  // every other route redirects to /sign-in from its own session check.
+  if (!session) return <>{children}</>;
 
   return (
     <UnitsProvider initialUnits={normalizeUnits(session.user.units)}>

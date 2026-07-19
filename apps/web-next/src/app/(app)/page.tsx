@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
-import { redirect } from "next/navigation";
 import { Dashboard } from "@/components/dashboard";
+import { MarketingPage } from "@/components/marketing-page";
 import { db } from "@/db";
 import { weatherSettings, zones } from "@/db/schema";
 import { getSession, isAdmin } from "@/lib/session";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await getSession();
-  if (!session) redirect("/sign-in");
+  if (!session) return <MarketingPage />;
   const admin = isAdmin(session);
 
   // Zone geometry + home center for the dashboard map's Aerial (Leaflet) view.
