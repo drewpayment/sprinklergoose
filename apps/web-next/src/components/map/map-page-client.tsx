@@ -42,6 +42,7 @@ interface Props {
 
 export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
   const [zones, setZones] = useState(initialZones);
+  const [home, setHome] = useState(fallbackCenter);
   const [editMode, setEditMode] = useState(false);
   const [selectedZoneId, setSelectedZoneId] = useState<number | null>(null);
   const [tool, setTool] = useState<DrawTool>(null);
@@ -93,6 +94,30 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
     setDraftPin(null);
   };
 
+  // The home anchor is the weather-settings location (docs/M4-MAP-SPEC.md
+  // W8) — moving it is a weather-settings update, so read-modify-write the
+  // singleton rather than inventing a separate home store.
+  const saveHome = useCallback(async (lat: number, lon: number) => {
+    setSaving(true);
+    try {
+      const s = await api.getWeatherSettings();
+      await api.updateWeatherSettings({
+        enabled: s.enabled,
+        latitude: lat,
+        longitude: lon,
+        rain_lookback_mm: s.rain_lookback_mm,
+        forecast_lookahead_mm: s.forecast_lookahead_mm,
+        freeze_temp_c: s.freeze_temp_c,
+      });
+      setHome({ lat, lon });
+      toast.success("Home location saved");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.detail : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
   const handleMapClick = useCallback(
     (lat: number, lng: number) => {
       if (tool === "pin") {
@@ -101,9 +126,12 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
         setDraftPolygon((pts) =>
           pts.length >= 100 ? pts : [...pts, [lat, lng]],
         );
+      } else if (tool === "home") {
+        setTool(null);
+        void saveHome(lat, lng);
       }
     },
-    [tool],
+    [tool, saveHome],
   );
 
   const undoLastPoint = () => setDraftPolygon((pts) => pts.slice(0, -1));
@@ -200,9 +228,27 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
               {editMode ? "Done editing" : "Edit mode"}
             </Button>
             {editMode && (
-              <span className="text-[12.5px] text-muted-foreground">
-                Select a zone below, then place a pin or draw its boundary.
-              </span>
+              <>
+                <Button
+                  variant={tool === "home" ? "default" : "outline"}
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => {
+                    setSelectedZoneId(null);
+                    setDraftPin(null);
+                    setDraftPolygon([]);
+                    setTool((t) => (t === "home" ? null : "home"));
+                  }}
+                  className="rounded-lg"
+                >
+                  {home ? "Move home" : "Set home"}
+                </Button>
+                <span className="text-[12.5px] text-muted-foreground">
+                  {tool === "home"
+                    ? "Click the map where your home is — or drag the home marker."
+                    : "Select a zone below, then place a pin or draw its boundary."}
+                </span>
+              </>
             )}
           </div>
         )}
@@ -211,7 +257,7 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
           <LeafletMap
             zones={zones}
             admin={admin}
-            fallbackCenter={fallbackCenter}
+            fallbackCenter={home}
             runningZoneId={running?.zoneId ?? null}
             runningRemainingSeconds={running?.remainingSeconds ?? null}
             editMode={editMode}
@@ -220,6 +266,7 @@ export function MapPageClient({ admin, initialZones, fallbackCenter }: Props) {
             draftPin={draftPin}
             draftPolygon={draftPolygon}
             onMapClick={handleMapClick}
+            onHomeMoved={admin ? (lat, lon) => void saveHome(lat, lon) : undefined}
           />
         </div>
 

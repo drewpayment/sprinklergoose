@@ -37,7 +37,12 @@ const ESRI_ATTRIBUTION = "Tiles &copy; Esri";
 const OSM_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTRIBUTION = "&copy; OpenStreetMap contributors";
 
-export type DrawTool = "pin" | "polygon" | null;
+export type DrawTool = "pin" | "polygon" | "home" | null;
+
+// Esri World Imagery serves tiles to ~19; let Leaflet upscale beyond that so
+// suburban lots are actually traceable in edit mode.
+const MAX_NATIVE_ZOOM = 19;
+const MAX_ZOOM = 22;
 
 export interface LeafletMapProps {
   zones: ZoneMapView[];
@@ -51,6 +56,8 @@ export interface LeafletMapProps {
   draftPin: LatLngTuple | null;
   draftPolygon: LatLngTuple[];
   onMapClick: (lat: number, lng: number) => void;
+  /** Admin edit mode: called when the home marker is dragged to a new spot. */
+  onHomeMoved?: (lat: number, lon: number) => void;
 }
 
 function zoneRingLatLngs(zone: ZoneMapView): LatLngTuple[] | null {
@@ -194,6 +201,7 @@ export function LeafletMap({
   draftPin,
   draftPolygon,
   onMapClick,
+  onHomeMoved,
 }: LeafletMapProps) {
   const [baseLayer, setBaseLayer] = useState<"satellite" | "street">(
     "satellite",
@@ -259,22 +267,45 @@ export function LeafletMap({
           : { center: view.center, zoom: view.zoom })}
         className="h-full w-full"
         scrollWheelZoom
+        maxZoom={MAX_ZOOM}
       >
         {baseLayer === "satellite" ? (
-          <TileLayer url={ESRI_URL} attribution={ESRI_ATTRIBUTION} />
+          <TileLayer
+            url={ESRI_URL}
+            attribution={ESRI_ATTRIBUTION}
+            maxZoom={MAX_ZOOM}
+            maxNativeZoom={MAX_NATIVE_ZOOM}
+          />
         ) : (
-          <TileLayer url={OSM_URL} attribution={OSM_ATTRIBUTION} />
+          <TileLayer
+            url={OSM_URL}
+            attribution={OSM_ATTRIBUTION}
+            maxZoom={MAX_ZOOM}
+            maxNativeZoom={MAX_NATIVE_ZOOM}
+          />
         )}
 
         {/* Home anchor (W8) — the weather-settings location, rendered with
-            a house glyph so it's never confused with a zone pin. */}
+            a house glyph so it's never confused with a zone pin. In admin
+            edit mode it's draggable so a misplaced home can be corrected. */}
         {fallbackCenter && (
           <Marker
             position={[fallbackCenter.lat, fallbackCenter.lon]}
             icon={createHomeIcon()}
+            draggable={editMode && onHomeMoved !== undefined}
+            eventHandlers={
+              onHomeMoved
+                ? {
+                    dragend: (e) => {
+                      const p = e.target.getLatLng();
+                      onHomeMoved(p.lat, p.lng);
+                    },
+                  }
+                : undefined
+            }
           >
             <Tooltip direction="top" className="zone-name-tooltip">
-              Home
+              {editMode && onHomeMoved ? "Home — drag to move" : "Home"}
             </Tooltip>
           </Marker>
         )}
@@ -402,7 +433,9 @@ export function LeafletMap({
         <div className="pointer-events-none absolute top-3 left-3 z-[1000] rounded-lg border bg-card px-3 py-1.5 text-[12.5px] font-medium shadow-(--shadow-card)">
           {tool === "pin"
             ? "Click the map to place the pin"
-            : "Click to add points · need 3+ to finish"}
+            : tool === "home"
+              ? "Click the map to set your home location"
+              : "Click to add points · need 3+ to finish"}
         </div>
       )}
 

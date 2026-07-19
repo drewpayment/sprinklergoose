@@ -126,11 +126,15 @@ export function Dashboard({
 
   const zones = status?.zones ?? [];
   const enabledZones = zones.filter((z) => z.enabled);
+  // Live status carries no geometry — join it in from the server-loaded zone
+  // configs so the plan can mirror the real map placement.
+  const geometryById = new Map(initialZones.map((z) => [z.id, z.geometry]));
   const planZones = enabledZones.map((z) => ({
     id: z.id,
     name: z.name,
     enabled: z.enabled,
     active: z.id === runningZoneId,
+    geometry: geometryById.get(z.id) ?? null,
   }));
 
   const selectedZone =
@@ -242,6 +246,7 @@ export function Dashboard({
                 {mapView === "plan" ? (
                   <DashboardMap
                     zones={planZones}
+                    home={fallbackCenter}
                     selectedZoneId={selectedZoneId}
                     runningZoneId={runningZoneId}
                     runningCountdown={runningCountdown}
