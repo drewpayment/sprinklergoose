@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, LogOut, MapPin, Users } from "lucide-react";
+import { ChevronRight, LogOut, Map, MapPin, Users } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -105,6 +105,12 @@ export function MoreMenu({
       label: "Zones",
       meta: `${zonesTotal}${zonesOff > 0 ? ` · ${zonesOff} off` : ""}`,
       Icon: MapPin,
+    },
+    {
+      href: "/map",
+      label: "Zone map",
+      meta: "Draw & edit",
+      Icon: Map,
     },
     {
       href: "/admin/weather",

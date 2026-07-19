@@ -9,6 +9,7 @@
 // (docs/M4-MAP-SPEC.md) — this is a layout + skin pass over the same behavior.
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { DashboardMap } from "@/components/dashboard-map";
@@ -264,19 +265,29 @@ export function Dashboard({
                   </div>
                 )}
 
-                <p className="mt-3 text-[12.5px] text-muted-foreground">
-                  {selectedZone ? (
-                    <>
-                      Selected:{" "}
-                      <strong className="text-foreground">
-                        {selectedZone.name}
-                      </strong>{" "}
-                      — set a duration in the list.
-                    </>
-                  ) : (
-                    "Tap a zone to select it · the running zone glows with its countdown."
+                <div className="mt-3 flex items-baseline justify-between gap-3">
+                  <p className="text-[12.5px] text-muted-foreground">
+                    {selectedZone ? (
+                      <>
+                        Selected:{" "}
+                        <strong className="text-foreground">
+                          {selectedZone.name}
+                        </strong>{" "}
+                        — set a duration in the list.
+                      </>
+                    ) : (
+                      "Tap a zone to select it · the running zone glows with its countdown."
+                    )}
+                  </p>
+                  {admin && (
+                    <Link
+                      href="/map"
+                      className="flex-none text-[12.5px] font-bold text-primary hover:underline"
+                    >
+                      Edit map ›
+                    </Link>
                   )}
-                </p>
+                </div>
 
                 {admin && (
                   <div className="mt-4 hidden md:block">
