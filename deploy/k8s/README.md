@@ -27,6 +27,12 @@ Notes:
 
 - **api runs exactly 1 replica** (`strategy: Recreate`). The LNK WiFi module is
   single-client; two pods talking to it will crash it.
+- **api needs `DATABASE_URL` too** (taken from the `rainbird-web-next` secret).
+  It is what starts the scheduler engine inside the executor — without it the
+  pod stays healthy and serves live status / manual starts, but scheduled
+  programs never fire and Quick Run / run-now requests are inserted into
+  `run_requests` and never claimed. On a healthy boot the api logs
+  `listening on sprinkler_events` shortly after startup.
 - **arp-pinner is required.** The module never answers broadcast ARP, so every
   node needs a permanent neighbor entry (`ip neigh replace ... nud permanent`),
   refreshed every 60s. Set the `IFACE` env var to your node's LAN interface.

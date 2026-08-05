@@ -50,6 +50,19 @@ spec:
               value: /app/data/zone_names.json
             - name: CORS_ORIGINS
               value: "*"
+            # DATABASE_URL is REQUIRED for the scheduler: without it the API
+            # boots healthy but never starts the scheduler engine — programs
+            # don't fire, Quick Run / run-now requests are never claimed, and
+            # the zone-enablement gate is bypassed. Shares the web-next secret
+            # so both services always point at the same database.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rainbird-web-next
+                  key: DATABASE_URL
+            # IANA timezone for program wall times (code default shown).
+            - name: SCHEDULE_TIMEZONE
+              value: "America/Detroit"
           volumeMounts:
             - name: data
               mountPath: /app/data
