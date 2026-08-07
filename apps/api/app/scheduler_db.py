@@ -4,6 +4,13 @@ The web app owns and migrates the schema; the executor reads programs /
 program_steps / zones / run_requests and writes run_requests.claimed_at,
 program_runs and program_run_steps. Pool pattern mirrors
 zone_config.AsyncpgZoneConfigSource: lazy creation, small, bounded timeouts.
+
+Every operation goes through _op(), which enforces a hard wall-clock bound
+and discards the pool on timeout. asyncpg's `command_timeout` only bounds a
+statement on a live connection — it does not bound Pool.acquire(), and a
+server killed without closing its sockets (SIGKILL under an NFS stall) can
+leave every pooled connection wedged so all later acquires block forever.
+The scheduler loop must never be able to hang on this store.
 """
 
 from __future__ import annotations
@@ -21,6 +28,10 @@ from .weather import WeatherSettings
 logger = logging.getLogger(__name__)
 
 DB_TIMEOUT_SECONDS = 5.0
+# An operation may hold a connection across several bounded statements
+# (acquire + inserts + commit), so its wall-clock budget is a multiple of
+# the per-statement timeout.
+OP_TIMEOUT_MULTIPLIER = 3
 NOTIFY_CHANNEL = "sprinkler_events"
 
 
@@ -45,6 +56,7 @@ class AsyncpgSchedulerStore:
     def __init__(self, dsn: str, timeout: float = DB_TIMEOUT_SECONDS) -> None:
         self._dsn = dsn
         self._timeout = timeout
+        self._op_timeout = timeout * OP_TIMEOUT_MULTIPLIER
         self._pool: Any = None
         self._pool_lock = asyncio.Lock()
         self.listening = False  # observability (tests wait on this)
@@ -63,19 +75,53 @@ class AsyncpgSchedulerStore:
                 )
             return self._pool
 
+    async def _op(self, label: str, op: Callable[[Any], Any]) -> Any:
+        """Run one pool operation with a hard wall-clock bound.
+
+        On timeout the stuck task is abandoned rather than awaited:
+        cancelling asyncpg mid-statement opens a *new* connection to the
+        server to deliver the cancel request, which hangs just as hard when
+        the server is gone. pool.terminate() closes every socket, which
+        unsticks the abandoned task, and dropping the pool reference means
+        the next call builds a fresh pool.
+        """
+        pool = await asyncio.wait_for(self._get_pool(), timeout=self._timeout)
+        task = asyncio.ensure_future(op(pool))
+        done, pending = await asyncio.wait({task}, timeout=self._op_timeout)
+        if pending:
+            task.cancel()
+            await self._discard_pool(pool)
+            raise TimeoutError(
+                f"{label} timed out after {self._op_timeout:g}s; pool discarded"
+            )
+        return task.result()
+
+    async def _discard_pool(self, pool: Any) -> None:
+        async with self._pool_lock:
+            if self._pool is pool:
+                self._pool = None
+        logger.warning("discarding wedged asyncpg pool")
+        try:
+            pool.terminate()
+        except Exception:
+            pass
+
     # ---------------------------------------------------------------- reads
 
     async def fetch_programs(self) -> list[Program]:
-        pool = await self._get_pool()
-        program_rows = await pool.fetch(
-            "SELECT id, name, enabled, start_times, day_type, days_of_week,"
-            " interval_days, anchor_date, respect_rain_delay, updated_at"
-            " FROM programs"
-        )
-        step_rows = await pool.fetch(
-            "SELECT program_id, position, zone_id, minutes"
-            " FROM program_steps ORDER BY program_id, position"
-        )
+        async def op(pool: Any) -> tuple[Any, Any]:
+            program_rows = await pool.fetch(
+                "SELECT id, name, enabled, start_times, day_type, days_of_week,"
+                " interval_days, anchor_date, respect_rain_delay, updated_at"
+                " FROM programs"
+            )
+            step_rows = await pool.fetch(
+                "SELECT program_id, position, zone_id, minutes"
+                " FROM program_steps ORDER BY program_id, position"
+            )
+            return program_rows, step_rows
+
+        program_rows, step_rows = await self._op("fetch_programs", op)
         steps: dict[int, list[ProgramStep]] = {}
         for row in step_rows:
             steps.setdefault(row["program_id"], []).append(
@@ -107,8 +153,10 @@ class AsyncpgSchedulerStore:
         ]
 
     async def fetch_zones(self) -> dict[int, ZoneRow]:
-        pool = await self._get_pool()
-        rows = await pool.fetch("SELECT id, name, enabled FROM zones")
+        rows = await self._op(
+            "fetch_zones",
+            lambda pool: pool.fetch("SELECT id, name, enabled FROM zones"),
+        )
         return {
             row["id"]: ZoneRow(
                 id=row["id"], name=row["name"], enabled=row["enabled"]
@@ -117,12 +165,14 @@ class AsyncpgSchedulerStore:
         }
 
     async def recent_run_keys(self, since: datetime) -> set[tuple[int, datetime]]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT program_id, scheduled_for FROM program_runs"
-            " WHERE program_id IS NOT NULL AND scheduled_for IS NOT NULL"
-            " AND scheduled_for >= $1",
-            since,
+        rows = await self._op(
+            "recent_run_keys",
+            lambda pool: pool.fetch(
+                "SELECT program_id, scheduled_for FROM program_runs"
+                " WHERE program_id IS NOT NULL AND scheduled_for IS NOT NULL"
+                " AND scheduled_for >= $1",
+                since,
+            ),
         )
         return {
             (row["program_id"], row["scheduled_for"].astimezone(UTC))
@@ -133,12 +183,14 @@ class AsyncpgSchedulerStore:
         """M3: the singleton weather_settings row (web-next owns the DDL).
         Returns None when the row is absent; raises on connection trouble —
         the scheduler keeps its previous settings in that case."""
-        pool = await self._get_pool()
-        row = await pool.fetchrow(
-            "SELECT enabled, latitude, longitude, rain_lookback_mm,"
-            " forecast_probability, forecast_lookahead_mm, freeze_temp_c,"
-            " updated_at"
-            " FROM weather_settings WHERE id = 1"
+        row = await self._op(
+            "fetch_weather_settings",
+            lambda pool: pool.fetchrow(
+                "SELECT enabled, latitude, longitude, rain_lookback_mm,"
+                " forecast_probability, forecast_lookahead_mm, freeze_temp_c,"
+                " updated_at"
+                " FROM weather_settings WHERE id = 1"
+            ),
         )
         if row is None:
             return None
@@ -156,17 +208,23 @@ class AsyncpgSchedulerStore:
     # --------------------------------------------------------------- claims
 
     async def claim_run_requests(self) -> list[RunRequest]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT id, program_id, requested_by, steps FROM run_requests"
-            " WHERE claimed_at IS NULL ORDER BY created_at, id"
-        )
+        async def op(pool: Any) -> Any:
+            rows = await pool.fetch(
+                "SELECT id, program_id, requested_by, steps FROM run_requests"
+                " WHERE claimed_at IS NULL ORDER BY created_at, id"
+            )
+            if not rows:
+                return []
+            await pool.execute(
+                "UPDATE run_requests SET claimed_at = now()"
+                " WHERE id = ANY($1::int[])",
+                [row["id"] for row in rows],
+            )
+            return rows
+
+        rows = await self._op("claim_run_requests", op)
         if not rows:
             return []
-        await pool.execute(
-            "UPDATE run_requests SET claimed_at = now() WHERE id = ANY($1::int[])",
-            [row["id"] for row in rows],
-        )
         return [
             RunRequest(
                 id=row["id"],
@@ -195,19 +253,21 @@ class AsyncpgSchedulerStore:
         note: str | None,
         now: datetime,
     ) -> int:
-        pool = await self._get_pool()
-        return await pool.fetchval(
-            "INSERT INTO program_runs"
-            " (program_id, program_name, scheduled_for, initiator, status,"
-            "  finished_at, note)"
-            " VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-            program_id,
-            program_name,
-            scheduled_for,
-            initiator,
-            status,
-            now,
-            note,
+        return await self._op(
+            "insert_terminal_run",
+            lambda pool: pool.fetchval(
+                "INSERT INTO program_runs"
+                " (program_id, program_name, scheduled_for, initiator, status,"
+                "  finished_at, note)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                program_id,
+                program_name,
+                scheduled_for,
+                initiator,
+                status,
+                now,
+                note,
+            ),
         )
 
     async def insert_running_run(
@@ -220,87 +280,100 @@ class AsyncpgSchedulerStore:
         steps: list[tuple[int, int, str, int]],
         now: datetime,
     ) -> int:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn, conn.transaction():
-            run_id = await conn.fetchval(
-                "INSERT INTO program_runs"
-                " (program_id, program_name, scheduled_for, initiator, status,"
-                "  started_at)"
-                " VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id",
-                program_id,
-                program_name,
-                scheduled_for,
-                initiator,
-                now,
-            )
-            await conn.executemany(
-                "INSERT INTO program_run_steps"
-                " (run_id, position, zone_id, zone_name, planned_minutes)"
-                " VALUES ($1, $2, $3, $4, $5)",
-                [
-                    (run_id, position, zone_id, zone_name, minutes)
-                    for position, zone_id, zone_name, minutes in steps
-                ],
-            )
-        return run_id
+        async def op(pool: Any) -> int:
+            async with pool.acquire() as conn, conn.transaction():
+                run_id = await conn.fetchval(
+                    "INSERT INTO program_runs"
+                    " (program_id, program_name, scheduled_for, initiator,"
+                    "  status, started_at)"
+                    " VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id",
+                    program_id,
+                    program_name,
+                    scheduled_for,
+                    initiator,
+                    now,
+                )
+                await conn.executemany(
+                    "INSERT INTO program_run_steps"
+                    " (run_id, position, zone_id, zone_name, planned_minutes)"
+                    " VALUES ($1, $2, $3, $4, $5)",
+                    [
+                        (run_id, position, zone_id, zone_name, minutes)
+                        for position, zone_id, zone_name, minutes in steps
+                    ],
+                )
+                return run_id
+
+        return await self._op("insert_running_run", op)
 
     async def mark_step_started(
         self, run_id: int, position: int, now: datetime
     ) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "UPDATE program_run_steps SET started_at = $3"
-            " WHERE run_id = $1 AND position = $2",
-            run_id,
-            position,
-            now,
+        await self._op(
+            "mark_step_started",
+            lambda pool: pool.execute(
+                "UPDATE program_run_steps SET started_at = $3"
+                " WHERE run_id = $1 AND position = $2",
+                run_id,
+                position,
+                now,
+            ),
         )
 
     async def mark_step_finished(
         self, run_id: int, position: int, outcome: str, finished_at: datetime | None
     ) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "UPDATE program_run_steps SET outcome = $3, finished_at = $4"
-            " WHERE run_id = $1 AND position = $2",
-            run_id,
-            position,
-            outcome,
-            finished_at,
+        await self._op(
+            "mark_step_finished",
+            lambda pool: pool.execute(
+                "UPDATE program_run_steps SET outcome = $3, finished_at = $4"
+                " WHERE run_id = $1 AND position = $2",
+                run_id,
+                position,
+                outcome,
+                finished_at,
+            ),
         )
 
     async def finish_run(
         self, run_id: int, status: str, note: str | None, now: datetime
     ) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "UPDATE program_runs SET status = $2, note = $3, finished_at = $4"
-            " WHERE id = $1",
-            run_id,
-            status,
-            note,
-            now,
+        await self._op(
+            "finish_run",
+            lambda pool: pool.execute(
+                "UPDATE program_runs SET status = $2, note = $3, finished_at = $4"
+                " WHERE id = $1",
+                run_id,
+                status,
+                note,
+                now,
+            ),
         )
 
     async def finalize_orphans(self, now: datetime) -> int:
         """M2.E9: finalize 'running' rows left behind by a crash/restart."""
-        pool = await self._get_pool()
-        async with pool.acquire() as conn, conn.transaction():
-            await conn.execute(
-                "UPDATE program_run_steps SET outcome = 'cancelled',"
-                " finished_at = $1"
-                " WHERE started_at IS NOT NULL AND finished_at IS NULL"
-                " AND outcome IS NULL"
-                " AND run_id IN (SELECT id FROM program_runs WHERE status = 'running')",
-                now,
-            )
-            rows = await conn.fetch(
-                "UPDATE program_runs SET status = 'cancelled', finished_at = $1,"
-                " note = 'cancelled: executor restarted mid-run'"
-                " WHERE status = 'running' RETURNING id",
-                now,
-            )
-        return len(rows)
+
+        async def op(pool: Any) -> int:
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    "UPDATE program_run_steps SET outcome = 'cancelled',"
+                    " finished_at = $1"
+                    " WHERE started_at IS NOT NULL AND finished_at IS NULL"
+                    " AND outcome IS NULL"
+                    " AND run_id IN"
+                    " (SELECT id FROM program_runs WHERE status = 'running')",
+                    now,
+                )
+                rows = await conn.fetch(
+                    "UPDATE program_runs SET status = 'cancelled',"
+                    " finished_at = $1,"
+                    " note = 'cancelled: executor restarted mid-run'"
+                    " WHERE status = 'running' RETURNING id",
+                    now,
+                )
+                return len(rows)
+
+        return await self._op("finalize_orphans", op)
 
     # --------------------------------------------------------------- listen
 

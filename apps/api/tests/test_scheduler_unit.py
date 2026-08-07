@@ -10,6 +10,7 @@ import pytest
 
 from app.scheduler import (
     INITIATOR_SCHEDULE,
+    STALL_AFTER_SECONDS,
     Scheduler,
     next_occurrence,
     occurrences_between,
@@ -791,6 +792,38 @@ async def test_notify_forces_immediate_refresh(store, irrigation, clock):
     await tick(scheduler)  # immediately, well before the poll interval
     _, nxt = scheduler.status_extras()
     assert nxt["program_name"] == "New"
+
+
+# -------------------------------------------------------- loop liveness
+
+
+async def test_loop_stalled_tracks_tick_completion(store, irrigation, clock):
+    scheduler = make_scheduler(store, irrigation, clock)
+    assert not scheduler.loop_stalled()  # no watermark before start/tick
+
+    await tick(scheduler)
+    assert not scheduler.loop_stalled()
+
+    await clock.advance(STALL_AFTER_SECONDS + 1)
+    assert scheduler.loop_stalled()
+
+    await tick(scheduler)
+    assert not scheduler.loop_stalled()
+
+
+async def test_tick_that_raises_still_counts_as_alive(store, irrigation, clock):
+    scheduler = make_scheduler(store, irrigation, clock)
+    await tick(scheduler)
+    await clock.advance(STALL_AFTER_SECONDS + 1)
+    assert scheduler.loop_stalled()
+
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    scheduler._tick = boom
+    with pytest.raises(RuntimeError):
+        await scheduler.tick()
+    assert not scheduler.loop_stalled()  # it returned — the loop is alive
 
 
 async def test_next_occurrence_helper_skips_disabled_and_empty():

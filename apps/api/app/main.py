@@ -88,6 +88,12 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
+        # The scheduler is a background task in this same process; a static
+        # 200 keeps the pod "healthy" while watering is dead. Failing here
+        # lets the k8s liveness probe restart the pod, the only recovery
+        # from a wedged loop.
+        if sched is not None and sched.loop_stalled():
+            raise HTTPException(status_code=503, detail="scheduler loop stalled")
         return {"status": "ok"}
 
     @app.get("/api/status", response_model=StatusResponse)

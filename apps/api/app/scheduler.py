@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEZONE = "America/Detroit"
 TICK_SECONDS = 5.0
 POLL_SECONDS = 15.0
+# A tick normally completes in milliseconds; even one riding out every DB
+# operation timeout finishes well inside a minute. Older than this means the
+# loop is wedged on an await and only a process restart can recover it.
+STALL_AFTER_SECONDS = 60.0
 MISSED_GRACE_SECONDS = 10 * 60
 QUEUE_CAP = 5
 EVAL_LOOKBACK = timedelta(hours=24)
@@ -370,6 +374,7 @@ class Scheduler:
         self._orphans_finalized = False
         self._refresh_needed = True
         self._last_refresh: datetime | None = None
+        self._last_tick_at: datetime | None = None
 
         self._poke = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
@@ -380,6 +385,9 @@ class Scheduler:
     async def start(self) -> None:
         if self._loop_task is not None:
             return
+        # Seed the liveness watermark so a wedge on the very first tick is
+        # still detected.
+        self._last_tick_at = self._clock.now()
         self._loop_task = asyncio.create_task(self._loop(), name="scheduler-loop")
         self._listen_task = asyncio.create_task(
             self._listen_loop(), name="scheduler-listen"
@@ -427,9 +435,27 @@ class Scheduler:
 
     # ------------------------------------------------------------------- tick
 
+    def loop_stalled(self, stall_after: float = STALL_AFTER_SECONDS) -> bool:
+        """True when no tick has completed for `stall_after` seconds — the
+        loop is wedged on an await that will never return. /healthz turns
+        this into a 503 so the liveness probe restarts the process; nothing
+        in-process can recover a wedged coroutine. False before start()."""
+        if self._last_tick_at is None:
+            return False
+        age = (self._clock.now() - self._last_tick_at).total_seconds()
+        return age > stall_after
+
     async def tick(self) -> None:
         """One scheduler cycle. Driven by the loop every <=5s; unit tests call
         it directly with a fake clock."""
+        try:
+            await self._tick()
+        finally:
+            # A raising tick still proves the loop is alive; only a tick
+            # that never returns must age the watermark.
+            self._last_tick_at = self._clock.now()
+
+    async def _tick(self) -> None:
         now = self._clock.now()
         if not self._orphans_finalized:
             try:
