@@ -18,6 +18,35 @@ async def test_healthz_ok_and_never_touches_module(client, fake_controller):
     assert fake_controller.calls == []
 
 
+async def test_healthz_503_when_scheduler_loop_stalled(settings, service):
+    from app.scheduler import STALL_AFTER_SECONDS, Scheduler
+
+    from .scheduler_testkit import (
+        FakeClock,
+        FakeIrrigation,
+        FakeSchedulerStore,
+        local,
+    )
+
+    clock = FakeClock(local(6, 0))
+    scheduler = Scheduler(
+        store=FakeSchedulerStore(),
+        service=FakeIrrigation(),
+        clock=clock,
+        timezone="America/Detroit",
+    )
+    app = create_app(settings=settings, service=service, scheduler=scheduler)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        await scheduler.tick()  # loop alive: watermark is fresh
+        assert (await client.get("/healthz")).status_code == 200
+
+        await clock.advance(STALL_AFTER_SECONDS + 1)  # no tick completes
+        assert (await client.get("/healthz")).status_code == 503
+
+
 # -------------------------------------------------------------------- status
 
 
